@@ -1,6 +1,11 @@
+
 import React, { useState, useEffect, useRef } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
 import { jwtDecode } from 'jwt-decode';
+import LandingPage from './LandingPage';
+import StorageService from './storage';
+import APIService from './services/api';
 import {
   Menu,
   X,
@@ -23,10 +28,11 @@ import {
   Send, // Added Send import for attachment menu
   Eye, // FIX: Ensure Eye is imported
   EyeOff, // FIX: Ensure EyeOff is imported
+  ArrowLeft, // For Back to Home button
 } from 'lucide-react';
 
 // Define the default logo path for the header 
-const DEFAULT_AVATAR_URL = '/VerdictX2.png';
+const DEFAULT_AVATAR_URL = '/VerdictX5.png';
 
 // Google OAuth client ID for authentication
 const GOOGLE_CLIENT_ID = '415850413825-pjonauh2d63edu9odf95gh10nmdks9en.apps.googleusercontent.com';
@@ -38,14 +44,28 @@ const EMOJIS = ['👍', '👋', '😊', '💡', '🚀', '✅', '🔥', '⚙️']
 // Note: These functions currently just read/write to chatHistory state for demonstration.
 const API_URL = 'YOUR_FASTAPI_ENDPOINT'; // Placeholder API URL
 
+// Debug function to check localStorage
+const checkLocalStorage = () => {
+    console.log('===== localStorage Contents =====');
+    console.log('All keys:', Object.keys(localStorage));
+    console.log('User data:', localStorage.getItem('user'));
+    console.log('Current chat ID:', localStorage.getItem('currentChatId'));
+    const user = JSON.parse(localStorage.getItem('user'));
+    if (user?.id) {
+        console.log('Chats:', localStorage.getItem(`chats_${user.id}`));
+    }
+};
+
 const saveChatToDB = (chatId, chatHistory) => {
     // Logic for finding and saving the specific chat conversation to MongoDB
     console.log(`[DB MOCK] Saving chat ${chatId} to persistent storage.`);
+    checkLocalStorage(); // Added debug line
 };
 
 const fetchAllChatsFromDB = (userId) => {
     // Logic to fetch all chats for a user from MongoDB
     console.log(`[DB MOCK] Fetching all chats for user ${userId}.`);
+    checkLocalStorage(); // Added debug line
     // Currently returns mock data for demonstration purposes
     return [
         { id: 1, title: 'Rajesh Murder Case', date: 'Jan 1', messages: [/*...*/] },
@@ -309,31 +329,38 @@ function AppContent() {
   // Mock data (replace with Firestore/API logic in a real app)
   const [users, setUsers] = useState([]);
 
-  const [chatHistory, setChatHistory] = useState(fetchAllChatsFromDB(currentUser?.id || 'initial'));
+  const [chatHistory, setChatHistory] = useState([]);
 
   // ------------------------------------------------
   // Persistent Storage and Initial Load
   // ------------------------------------------------
 
-  // Load state from localStorage on mount (USER ONLY - Chat History loaded from MOCK DB)
+  // Load state from storage on mount
   useEffect(() => {
-    const savedUser = localStorage.getItem('user');
+    // Load user from storage
+    const savedUser = StorageService.getUser();
     if (savedUser) {
-        const user = JSON.parse(savedUser);
-        setCurrentUser(user);
-        setIsLoggedIn(true);
-        // Simulate initial chat load from DB after user logs in
-        setChatHistory(fetchAllChatsFromDB(user.id));
+      setCurrentUser(savedUser);
+      setIsLoggedIn(true);
+    }
+    
+    // Load all chats
+    const chats = StorageService.getAllChats(savedUser?.id);
+    setChatHistory(chats);
+    
+    // Restore last active chat
+    const lastChatId = StorageService.getCurrentChatId();
+    if (lastChatId) {
+      const lastChat = StorageService.getChat(lastChatId);
+      if (lastChat) {
+        setCurrentChatId(lastChatId);
+        setCurrentChat(lastChat.messages || []);
+      }
     }
   }, []); // Run only once on mount
 
 
-  // Save chatHistory to MOCK DB (Manual simulation of backend saving)
-  useEffect(() => {
-    if (currentChatId) {
-        saveChatToDB(currentChatId, chatHistory);
-    }
-  }, [chatHistory, currentChatId]);
+  // This section has been replaced with StorageService.saveChat() calls
 
 
   // ------------------------------------------------
@@ -370,12 +397,18 @@ function AppContent() {
 
   useEffect(() => {
     if (currentChatId && currentChat.length > 0) {
+      const newTitle = generateChatTitle(currentChat);
+      
+      // Save to storage
+      StorageService.saveChat(currentChatId, currentChat, newTitle);
+      
+      // Update state
       setChatHistory(prevHistory => {
         return prevHistory.map(chat => {
-          if (String(chat.id) === String(currentChatId)) { // Use String conversion for reliable ID match
+          if (String(chat.id) === String(currentChatId)) {
             return {
               ...chat,
-              title: generateChatTitle(currentChat),
+              title: newTitle,
               messages: currentChat,
               date: 'Just now'
             };
@@ -396,7 +429,19 @@ function AppContent() {
   // Auth Handlers (retained)
   const handleLogin = (e) => { e.preventDefault(); setLoginError(''); const user = users.find(u => u.email === loginForm.email && u.password === loginForm.password); if (user) { setCurrentUser(user); setIsLoggedIn(true); localStorage.setItem('user', JSON.stringify(user)); } else { setLoginError('Invalid email or password'); } };
   const handleSignup = (e) => { e.preventDefault(); /* ... signup logic ... */ const newUser = { id: users.length + 1, name: signupForm.name, email: signupForm.email, password: signupForm.password }; setUsers([...users, newUser]); setCurrentUser(newUser); setIsLoggedIn(true); setChatHistory([]); localStorage.setItem('user', JSON.stringify(newUser)); };
-  const handleLogout = () => { setIsLoggedIn(false); setCurrentUser(null); setCurrentChat([]); setCurrentChatId(null); setLoginForm({ email: '', password: '' }); setShowUserMenu(false); localStorage.removeItem('user'); localStorage.removeItem('currentChatId'); };
+  const handleLogout = () => { 
+    setIsLoggedIn(false); 
+    setCurrentUser(null); 
+    setCurrentChat([]); 
+    setCurrentChatId(null); 
+    setLoginForm({ email: '', password: '' }); 
+    setShowUserMenu(false); 
+    setChatHistory([]);
+    
+    // Clear from storage
+    StorageService.clearUser();
+    StorageService.clearCurrentChatId();
+  };
   
   // Mock Google Sign-In Success Handler (Fallback for direct button click, though handled by component now)
   const handleMockGoogleSignIn = () => { 
@@ -452,13 +497,13 @@ function AppContent() {
   };
 
   // REFINED HANDLER: Send/Update Message Logic (CRITICAL INTEGRATION POINT)
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (message.trim() && !isBotTyping) {
       let messageText = message;
-      let fileData = attachedFile; // Capture file data before clearing message input
+      let fileData = attachedFile;
 
-      setMessage(''); // Clear message input for the next user message
-      setAttachedFile(null); // Clear attached file state
+      setMessage('');
+      setAttachedFile(null);
       
       if (isEditing) {
         // --- EDIT/UPDATE LOGIC ---
@@ -470,17 +515,14 @@ function AppContent() {
         return;
       }
 
-      // --- NEW MESSAGE LOGIC (Integration Target) ---
-      setIsBotTyping(true); // START: Disable input
+      setIsBotTyping(true);
       
       const newMessage = {
         text: messageText,
         sender: 'user',
-        // --- KEY CHANGE: CAPTURE HIGH-PRECISION TIMESTAMP ---
         timestamp: Date.now(),
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         id: Date.now(),
-        // ATTACHMENT: Include file metadata if present
         file: fileData ? { name: fileData.name, url: fileData.url, type: fileData.type } : undefined
       };
       
@@ -496,10 +538,10 @@ function AppContent() {
         };
         setChatHistory(prev => [newChat, ...prev]);
         setCurrentChatId(newChatId);
+        StorageService.setCurrentChatId(newChatId);
       }
-      
-      // Add user message and typing indicator placeholder
-      const botPlaceholderId = Date.now() + 1; // Unique ID for the message being streamed
+
+      const botPlaceholderId = Date.now() + 1;
       const initialBotMessage = {
         text: 'AI is thinking...', 
         sender: 'bot',
@@ -567,9 +609,36 @@ function AppContent() {
     }
   };
 
-  const startNewChat = () => { setCurrentChat([]); setCurrentChatId(null); setShowSidebar(false); setMessage(''); };
-  const deleteChat = (chatId, e) => { e.stopPropagation(); setChatHistory(chatHistory.filter(chat => chat.id !== chatId)); if (currentChatId === chatId) { setCurrentChat([]); setCurrentChatId(null); } };
-  const loadChat = (chat) => { setCurrentChat(chat.messages || []); setCurrentChatId(chat.id); setShowSidebar(false); };
+  const startNewChat = () => { 
+    setCurrentChat([]); 
+    setCurrentChatId(null); 
+    setShowSidebar(false); 
+    setMessage('');
+    StorageService.clearCurrentChatId(); // Clear stored chat ID
+  };
+  
+  const deleteChat = (chatId, e) => { 
+    e.stopPropagation(); 
+    
+    // Delete from storage
+    StorageService.deleteChat(chatId);
+    
+    // Update state
+    setChatHistory(chatHistory.filter(chat => chat.id !== chatId)); 
+    
+    if (currentChatId === chatId) { 
+      setCurrentChat([]); 
+      setCurrentChatId(null); 
+      StorageService.clearCurrentChatId();
+    } 
+  };
+  
+  const loadChat = (chat) => { 
+    setCurrentChat(chat.messages || []); 
+    setCurrentChatId(chat.id); 
+    setShowSidebar(false);
+    StorageService.setCurrentChatId(chat.id); // Save as current chat
+  };
   const handleKeyPress = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } };
   
   const generateShareLink = () => { return `${window.location.origin}/shared/${currentChatId || 'new-chat-id'}`; }; // Use currentChatId for better link logic
@@ -619,24 +688,68 @@ function AppContent() {
           boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)',
           width: '100%',
           maxWidth: '440px',
-          padding: '48px 40px'
+          padding: '48px 40px',
+          position: 'relative'
         }}>
+          {/* Back to Home Button */}
+          <button
+            onClick={() => window.location.href = '/'}
+            style={{
+              position: 'absolute',
+              top: '20px',
+              left: '20px',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              color: '#6b7280',
+              fontSize: '14px',
+              fontWeight: '500',
+              fontFamily: 'Alata, sans-serif',
+              padding: '8px',
+              borderRadius: '8px',
+              transition: 'all 0.2s'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = '#f3f4f6';
+              e.currentTarget.style.color = '#3b82f6';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent';
+              e.currentTarget.style.color = '#6b7280';
+            }}
+          >
+            <ArrowLeft size={16} />
+            Back to Home
+          </button>
           <div style={{ textAlign: 'center', marginBottom: '32px' }}>
             <div style={{
-              width: '200px',
-              height: '80px',
+              width: '180px',  // Further reduced width
+              height: '45px',  // Further reduced height proportionally
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              margin: '0 auto 16px'
+              margin: '0 auto 16px',
+              maxWidth: '95%',
+              position: 'relative'
             }}>
               <img 
-                src="/VerdictX2.png"
+                src="/VerdictX5.png"
                 alt="VerdictX Logo"
                 style={{
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'contain'
+                  width: '180px', // Further reduced width
+                  height: '45px',  // Further reduced height
+                  objectFit: 'contain',
+                  position: 'absolute',
+                  left: '50%',
+                  transform: 'translateX(-50%)'
+                }}
+                onError={(e) => {
+                  console.error('Image failed to load:', e);
+                  e.target.onerror = null;
+                  e.target.src = '/VerdictX2.png';
                 }}
               />
             </div>
@@ -673,7 +786,46 @@ function AppContent() {
                 <div style={{ flex: 1, height: '1px', backgroundColor: '#e5e7eb' }}></div>
               </div>
               
-              <GoogleSignInButton setCurrentUser={setCurrentUser} setIsLoggedIn={setIsLoggedIn} setLoginError={setLoginError} />
+              <div style={{ display: 'flex', justifyContent: 'center' }}>
+                <GoogleLogin
+                  onSuccess={(credentialResponse) => {
+                    try {
+                      const decoded = jwtDecode(credentialResponse.credential);
+                      const userData = {
+                        id: decoded.sub,
+                        name: decoded.name,
+                        email: decoded.email,
+                        picture: decoded.picture
+                      };
+                      
+                      // First save to storage
+                      const stored = StorageService.setUser(userData);
+                      
+                      if (stored) {
+                        // Then update state
+                        setCurrentUser(userData);
+                        setIsLoggedIn(true);
+                        setLoginError('');
+                      } else {
+                        setLoginError('Failed to save user data. Please try again.');
+                      }
+                    } catch (error) {
+                      console.error('Google login error:', error);
+                      setLoginError('Failed to process login. Please try again.');
+                    }
+                  }}
+                  onError={() => {
+                    setLoginError('Google Sign In was unsuccessful. Please try again later.');
+                  }}
+                  useOneTap
+                  theme="filled_blue"
+                  shape="rectangular"
+                  size="large"
+                  type="standard"
+                  text="continue_with"
+                  width="280px"
+                />
+              </div>
 
 
               <div style={{ marginTop: '24px', textAlign: 'center' }}>
@@ -767,7 +919,7 @@ function AppContent() {
             alignItems: 'center',
             justifyContent: 'space-between'
           }}>
-            <h2 style={{ fontSize: '18px', fontWeight: '600', color: colors.textPrimary, margin: 0 }}>Chat History</h2>
+            <h2 style={{ fontSize: '18px', fontWeight: '600', color: colors.textPrimary, margin: 0, fontFamily: 'Alata, sans-serif' }}>Chat History</h2>
             <button 
               onClick={() => setShowSidebar(false)}
               style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: colors.textPrimary }}
@@ -792,7 +944,8 @@ function AppContent() {
                     color: colors.textPrimary,
                     outline: 'none',
                     fontSize: '14px',
-                    boxSizing: 'border-box'
+                    boxSizing: 'border-box',
+                    fontFamily: 'Alata, sans-serif'
                 }}
             />
           </div>
@@ -847,10 +1000,10 @@ function AppContent() {
                 }}
               >
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontSize: '14px', fontWeight: '500', color: colors.textPrimary, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <p style={{ fontSize: '14px', fontWeight: '500', color: colors.textPrimary, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'Alata, sans-serif' }}>
                     {chat.title}
                   </p>
-                  <p style={{ fontSize: '12px', color: colors.textSecondary, marginTop: '4px', margin: 0 }}>
+                  <p style={{ fontSize: '12px', color: colors.textSecondary, marginTop: '4px', margin: 0, fontFamily: 'Alata, sans-serif' }}>
                     {chat.date} • {chat.messages?.length || 0} messages
                   </p>
                 </div>
@@ -911,8 +1064,8 @@ function AppContent() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }} className="header-controls" data-print-hide="true">
-            {/* NEW: Dark Mode Toggle */}
-            <div style={{ display: 'none' }} data-print-hide="true" className="print-hidden">
+            {/* Dark Mode Toggle */}
+            <div data-print-hide="true" className="print-hidden">
               <button
                   onClick={() => setIsDarkMode(!isDarkMode)}
                   style={{ 
@@ -941,7 +1094,7 @@ function AppContent() {
                   onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
                 >
                   <Share2 size={18} color={colors.textPrimary} />
-                  <span style={{ fontSize: '14px', color: colors.textPrimary, fontWeight: '500' }}>Share</span>
+                  <span style={{ fontSize: '14px', color: colors.textPrimary, fontWeight: '500', fontFamily: 'Alata, sans-serif' }}>Share</span>
                 </button>
                 </div>
                 {showShareMenu && (
@@ -960,7 +1113,7 @@ function AppContent() {
                         onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                     >
                       <FileDown size={20} color="#dc2626" />
-                      <span style={{ fontSize: '14px', fontWeight: '500' }}>Export as PDF</span>
+                      <span style={{ fontSize: '14px', fontWeight: '500', fontFamily: 'Alata, sans-serif' }}>Export as PDF</span>
                     </button>
                     
                     {/* UPDATED: Copy Share Link Button */}
@@ -983,7 +1136,7 @@ function AppContent() {
                         onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                     >
                       {linkCopied ? <Check size={20} color="#10b981" /> : <Copy size={20} color="#3b82f6" />}
-                      <span style={{ fontSize: '14px', fontWeight: '500' }}>{linkCopied ? 'Link Copied!' : 'Copy Share Link'}</span>
+                      <span style={{ fontSize: '14px', fontWeight: '500', fontFamily: 'Alata, sans-serif' }}>{linkCopied ? 'Link Copied!' : 'Copy Share Link'}</span>
                     </button>
 
                   </div>
@@ -1003,7 +1156,7 @@ function AppContent() {
               <div style={{ width: '36px', height: '36px', backgroundColor: '#3b82f6', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <User size={20} color="white" />
               </div>
-              <span style={{ fontSize: '14px', fontWeight: '500', color: colors.textPrimary }}>
+              <span style={{ fontSize: '14px', fontWeight: '500', color: colors.textPrimary, fontFamily: 'Alata, sans-serif' }}>
                 {currentUser?.name || 'My Account'}
               </span>
               <ChevronDown size={16} color={colors.textSecondary} />
@@ -1014,17 +1167,17 @@ function AppContent() {
                 style={{ position: 'absolute', top: '56px', right: 0, backgroundColor: colors.bgApp, border: `1px solid ${colors.border}`, borderRadius: '12px', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', padding: '8px', width: '220px', zIndex: 50, color: colors.textPrimary }}
               >
                 <div style={{ padding: '12px', borderBottom: `1px solid ${colors.border}` }}>
-                  <p style={{ fontSize: '14px', fontWeight: '600', color: colors.textPrimary, margin: 0 }}>
+                  <p style={{ fontSize: '14px', fontWeight: '600', color: colors.textPrimary, margin: 0, fontFamily: 'Alata, sans-serif' }}>
                     {currentUser?.name}
                   </p>
-                  <p style={{ fontSize: '12px', color: colors.textSecondary, marginTop: '4px', margin: 0 }}>
+                  <p style={{ fontSize: '12px', color: colors.textSecondary, marginTop: '4px', margin: 0, fontFamily: 'Alata, sans-serif' }}>
                     {currentUser?.email}
                   </p>
                 </div>
                 
                 <button
                   onClick={handleLogout}
-                  style={{ width: '100%', padding: '12px', marginTop: '4px', textAlign: 'left', background: 'none', border: 'none', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', borderRadius: '6px', color: '#dc2626', fontWeight: '500', fontSize: '14px' }}
+                  style={{ width: '100%', padding: '12px', marginTop: '4px', textAlign: 'left', background: 'none', border: 'none', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', borderRadius: '6px', color: '#dc2626', fontWeight: '500', fontSize: '14px', fontFamily: 'Alata, sans-serif' }}
                   onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fee2e2'}
                   onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                 >
@@ -1808,11 +1961,25 @@ function AppContent() {
   );
 }
 
-// Export the main App component wrapped with GoogleOAuthProvider
-export default function App() {
+function App() {
+  return (
+    <div className="App">
+      <Routes>
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/signin" element={<AppContent />} />
+        <Route path="*" element={<Navigate to="/" />} />
+      </Routes>
+    </div>
+  );
+}
+
+// Export the main App component wrapped with providers
+export default function AppWrapper() {
   return (
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
-      <AppContent />
+      <Router>
+        <App />
+      </Router>
     </GoogleOAuthProvider>
   );
 }
