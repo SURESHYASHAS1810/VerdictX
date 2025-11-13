@@ -1,8 +1,11 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
 import { jwtDecode } from 'jwt-decode';
 import LandingPage from './LandingPage';
+import StorageService from './storage';
+import APIService from './services/api';
 import {
   Menu,
   X,
@@ -10,222 +13,596 @@ import {
   Trash2,
   Share2,
   Check,
-  Copy,
+  Copy, // Added Copy icon
   User,
   ChevronDown,
   LogOut,
-  FileDown,
-  Smile,
-  Edit,
-  Sun,
-  Moon,
-  FileText,
-  Image,
-  Plus,
-  Send,
-  Eye,
-  EyeOff,
-  ArrowLeft,
+  FileDown, // For PDF Export
+  Smile, // For Emoji Picker
+  Edit, // For Message Editing
+  Sun, // For Dark Mode Toggle
+  Moon, // For Dark Mode Toggle
+  FileText, // Added FileText import for attachment menu
+  Image, // Added Image import for attachment menu
+  Plus, // Added Plus import for attachment menu
+  Send, // Added Send import for attachment menu
+  Eye, // FIX: Ensure Eye is imported
+  EyeOff, // FIX: Ensure EyeOff is imported
+  ArrowLeft, // For Back to Home button
 } from 'lucide-react';
 
-// Import your storage service (assuming it exists)
-const StorageService = {
-  getUser: () => JSON.parse(localStorage.getItem('user')),
-  setUser: (user) => { localStorage.setItem('user', JSON.stringify(user)); return true; },
-  clearUser: () => localStorage.removeItem('user'),
-  getAllChats: (userId) => JSON.parse(localStorage.getItem(`chats_${userId}`) || '[]'),
-  saveChat: (chatId, messages, title) => {
-    const user = StorageService.getUser();
-    if (!user) return;
-    const chats = StorageService.getAllChats(user.id);
-    const existingIndex = chats.findIndex(c => String(c.id) === String(chatId));
-    const chatData = { id: chatId, title, messages, date: 'Just now' };
-    if (existingIndex >= 0) {
-      chats[existingIndex] = chatData;
-    } else {
-      chats.unshift(chatData);
-    }
-    localStorage.setItem(`chats_${user.id}`, JSON.stringify(chats));
-  },
-  getChat: (chatId) => {
-    const user = StorageService.getUser();
-    if (!user) return null;
-    const chats = StorageService.getAllChats(user.id);
-    return chats.find(c => String(c.id) === String(chatId));
-  },
-  deleteChat: (chatId) => {
-    const user = StorageService.getUser();
-    if (!user) return;
-    const chats = StorageService.getAllChats(user.id).filter(c => String(c.id) !== String(chatId));
-    localStorage.setItem(`chats_${user.id}`, JSON.stringify(chats));
-  },
-  getCurrentChatId: () => localStorage.getItem('currentChatId'),
-  setCurrentChatId: (chatId) => localStorage.setItem('currentChatId', String(chatId)),
-  clearCurrentChatId: () => localStorage.removeItem('currentChatId'),
-};
-
+// Define the default logo path for the header 
 const DEFAULT_AVATAR_URL = '/VerdictX5.png';
-const GOOGLE_CLIENT_ID = '415850413825-pjonauh2d63edu9odf95gh10nmdks9en.apps.googleusercontent.com';
-const EMOJIS = ['👍', '👎', '😊', '💡', '🚀', '✅', '🔥', '⚖️'];
-const MASTER_API_URL = 'https://squirarchical-isabel-designed.ngrok-free.dev';
-const EXTRACTION_API_URL = 'https://crampingly-untrying-trinh.ngrok-free.dev';
 
+// Google OAuth client ID for authentication
+const GOOGLE_CLIENT_ID = '415850413825-pjonauh2d63edu9odf95gh10nmdks9en.apps.googleusercontent.com';
+
+// Array of common emojis for the picker and reactions (NOTE: Single Declaration)
+const EMOJIS = ['👍', '👋', '😊', '💡', '🚀', '✅', '🔥', '⚙️'];
+
+// --- MASTER API ENDPOINT ---
+// Uses the ngrok URL exposed by teammate's backend
+// If backend is offline, requests will fail - ask teammate to keep backend + ngrok running
+const MASTER_API_URL = 'https://squirarchical-isabel-designed.ngrok-free.dev';
+
+// Feature configurations mapping
+// Feature configurations mapping - CORRECTED ENDPOINTS
 const FEATURE_CONFIG = {
   'judgment_prediction': {
     name: 'Judgment Prediction',
-    endpoint: '/predict/judgment',
-    followupEndpoint: '/predict/followup/judgment',
-    icon: '⚖️',
-    acceptsText: true,
-    acceptsPdf: true,
-    inputType: 'both',
-    apiUrl: MASTER_API_URL
+    endpoint: '/predict/judgment',  // ✅ FIXED: was /judgment-prediction
+    icon: '⚖'
   },
   'bail_analysis': {
     name: 'Bail Analysis',
-    endpoint: '/predict/bail',
-    followupEndpoint: '/predict/followup/bail',
-    icon: '🔓',
-    acceptsText: false,
-    acceptsPdf: true,
-    inputType: 'pdf',
-    apiUrl: MASTER_API_URL
+    endpoint: '/predict/bail',  // ✅ FIXED: was /bail-analysis
+    icon: '🔓'
   },
   'case_summarization': {
     name: 'Case Summarization',
-    endpoint: '/summary/case',
-    followupEndpoint: '/predict/followup/summary',
-    icon: '📋',
-    acceptsText: false,
-    acceptsPdf: true,
-    inputType: 'pdf',
-    apiUrl: MASTER_API_URL
+    endpoint: '/summary/case',  // ✅ FIXED: was /case-summary
+    icon: '📋'
   },
   'verdictx_qai': {
     name: 'VerdictX QAI',
-    endpoint: '/qa/query',
-    followupEndpoint: '/qa/followup',
-    icon: '🤖',
-    acceptsText: true,
-    acceptsPdf: false,
-    inputType: 'text',
-    apiUrl: MASTER_API_URL
+    endpoint: '/qa/query',  // ✅ FIXED: was /verdictx-qai
+    icon: '🤖'
   },
   'information_extraction': {
-    name: 'Information Extraction & Document Drafting',
-    endpoint: '/api/extract-and-download',
-    followupEndpoint: '/api/extract-and-download',
-    icon: '📄',
-    acceptsText: true,
-    acceptsPdf: true,
-    inputType: 'both',
-    apiUrl: EXTRACTION_API_URL
+    name: 'Information Extraction & Drafting',
+    endpoint: '/predict/extraction',  // Note: This endpoint doesn't exist in backend yet!
+    icon: '📄'
   }
 };
 
-const TypingIndicator = ({ isDarkMode }) => (
-  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
-    {[0, 0.2, 0.4].map((delay, i) => (
-      <div key={i} style={{
-        display: 'inline-block',
-        width: '4px',
-        height: '4px',
-        margin: '0 2px',
-        backgroundColor: isDarkMode ? '#fff' : '#000',
-        borderRadius: '50%',
-        animation: 'typing 1s infinite ease-in-out',
-        animationDelay: `${delay}s`
-      }} />
-    ))}
-    <style>{`
-      @keyframes typing {
-        0%, 100% { transform: translateY(0); }
-        50% { transform: translateY(-4px); }
+// --- MOCK DATABASE API FUNCTIONS (TO BE REPLACED WITH FASTAPI FETCH CALLS) ---
+// Note: These functions currently just read/write to chatHistory state for demonstration.
+const API_URL = 'YOUR_FASTAPI_ENDPOINT'; // Placeholder API URL
+
+// Debug function to check localStorage
+const checkLocalStorage = () => {
+    console.log('===== localStorage Contents =====');
+    console.log('All keys:', Object.keys(localStorage));
+    console.log('User data:', localStorage.getItem('user'));
+    console.log('Current chat ID:', localStorage.getItem('currentChatId'));
+    const user = JSON.parse(localStorage.getItem('user'));
+    if (user?.id) {
+        console.log('Chats:', localStorage.getItem(`chats_${user.id}`));
+    }
+};
+
+const saveChatToDB = (chatId, chatHistory) => {
+    // Logic for finding and saving the specific chat conversation to MongoDB
+    console.log(`[DB MOCK] Saving chat ${chatId} to persistent storage.`);
+    checkLocalStorage(); // Added debug line
+};
+
+const fetchAllChatsFromDB = (userId) => {
+    // Logic to fetch all chats for a user from MongoDB
+    console.log(`[DB MOCK] Fetching all chats for user ${userId}.`);
+    checkLocalStorage(); // Added debug line
+    // Currently returns mock data for demonstration purposes
+    return [
+        { id: 1, title: 'Rajesh Murder Case', date: 'Jan 1', messages: [/*...*/] },
+        { id: 2, title: 'Bail Application - Jan 3', date: 'Jan 3', messages: [/*...*/] },
+    ];
+};
+// --- END MOCK API FUNCTIONS ---
+
+// Function to handle file downloads
+const handleFileDownload = (file) => {
+  try {
+    // Create an anchor element
+    const link = document.createElement('a');
+    
+    // If it's a URL, use it directly, otherwise use the blob URL
+    if (file.url.startsWith('http') || file.url.startsWith('blob:')) {
+      link.href = file.url;
+    } else {
+      // For base64 or other data
+      const blob = dataURLtoBlob(file.url);
+      link.href = URL.createObjectURL(blob);
+    }
+    
+    // Set download attribute with filename
+    link.download = file.name;
+    
+    // Append to body, click, and remove
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    // Clean up blob URL if created
+    if (link.href.startsWith('blob:')) {
+      URL.revokeObjectURL(link.href);
+    }
+  } catch (error) {
+    console.error('Download failed:', error);
+    alert('Failed to download file. Please try again.');
+  }
+};
+
+// Helper function to convert data URL to blob
+const dataURLtoBlob = (dataurl) => {
+  try {
+    if (dataurl.startsWith('data:')) {
+      const arr = dataurl.split(',');
+      const mime = arr[0].match(/:(.*?);/)[1];
+      const bstr = atob(arr[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
       }
-    `}</style>
-  </div>
-);
+      return new Blob([u8arr], { type: mime });
+    }
+    // If not a data URL, fetch and convert to blob
+    return fetch(dataurl).then(r => r.blob());
+  } catch (error) {
+    console.error('Data URL conversion failed:', error);
+    throw error;
+  }
+};
 
-// Format structured responses based on feature type
-const formatStructuredResponse = (data, featureKey) => {
-  if (featureKey === 'judgment_prediction') {
-    const precedentsHTML = data.precedents?.length
-      ? data.precedents.map((p, i) => `${i + 1}. [${p.outcome}] (Similarity: ${(p.similarity * 100).toFixed(1)}%)\n${p.text}`).join('\n\n')
-      : 'No similar precedents found.';
+// Reusable Google Sign-In Button Component
+const GoogleSignInButton = ({ setCurrentUser, setIsLoggedIn, setLoginError }) => {
+  const handleGoogleSuccess = (credentialResponse) => {
+    try {
+      const decoded = jwtDecode(credentialResponse.credential);
+      const googleUser = {
+        id: decoded.sub,
+        name: decoded.name,
+        email: decoded.email,
+        picture: decoded.picture
+      };
+      setCurrentUser(googleUser);
+      setIsLoggedIn(true);
+      localStorage.setItem('user', JSON.stringify(googleUser));
+    } catch (error) {
+      console.error('Google Sign-In Error:', error);
+      setLoginError('Failed to sign in with Google. Please try again.');
+    }
+  };
 
-    return `======================================================================
-⚖️  CASE TYPE: ${data.case_type || 'Unknown'}
-======================================================================
+  return (
+    <div style={{ width: '100%', marginBottom: '12px' }}>
+      <GoogleLogin
+        onSuccess={handleGoogleSuccess}
+        onError={() => {
+          console.error('Login Failed');
+          setLoginError('Failed to sign in with Google. Please try again.');
+        }}
+        theme="filled_blue"
+        size="large"
+        width="100%"
+        text="sign_in_with_google"
+        logo_alignment="left"
+        shape="rectangular"
+      />
+    </div>
+  );
+};
 
-🎯 PREDICTION: ${data.prediction}
-   Confidence: ${data.confidence || 'N/A'}%
-   (Grant: ${data.grant_probability || 0}% | Reject: ${data.reject_probability || 0}%)
 
-======================================================================
-LEGAL ANALYSIS (Case Summary + IRAC)
-======================================================================
-${data.llm_analysis || 'No IRAC analysis available.'}
+// Typing indicator component
+const TypingIndicator = ({ isDarkMode }) => {
+  const dotStyle = {
+    display: 'inline-block',
+    width: '4px',
+    height: '4px',
+    margin: '0 2px',
+    backgroundColor: isDarkMode ? '#fff' : '#000',
+    borderRadius: '50%',
+    animation: 'typing 1s infinite ease-in-out',
+  };
 
-======================================================================
-SIMILAR PRECEDENTS (Top ${data.precedents?.length || 0})
-======================================================================
-${precedentsHTML}`;
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+      <div style={{ ...dotStyle, animationDelay: '0s' }} />
+      <div style={{ ...dotStyle, animationDelay: '0.2s' }} />
+      <div style={{ ...dotStyle, animationDelay: '0.4s' }} />
+      <style>{`
+        @keyframes typing {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-4px); }
+        }
+      `}</style>
+    </div>
+  );
+};
+// ============================================
+// PART 1: ADD CONTEXT TRACKING STATE
+// Add this near the top of AppContent (around line 180)
+// ============================================
+
+const [activeContext, setActiveContext] = useState(null); // Tracks which feature is active
+const [contextData, setContextData] = useState(null); // Stores the analysis result
+
+// ============================================
+// PART 2: UPDATED handleFeatureAPICall
+// Replace entire function (around line 250)
+// ============================================
+
+const handleFeatureAPICall = async (featureKey, fileContent) => {
+  if (!FEATURE_CONFIG[featureKey]) {
+    console.error('Invalid feature:', featureKey);
+    return;
   }
 
-  if (featureKey === 'bail_analysis') {
-    const bailRel = data.bail_relevance || {};
-    const verdict = data.verdict_info?.verdict || 'VERDICT NOT CLEAR';
+  try {
+    setIsProcessingFile(true);
     
-    const finalProb = data.final_verdict_prob ? (data.final_verdict_prob * 100).toFixed(1) : 'N/A';
-    const finalRejectProb = data.final_verdict_prob ? ((1 - data.final_verdict_prob) * 100).toFixed(1) : 'N/A';
-    const finalVerdict = data.final_verdict_text || 'UNCERTAIN';
+    // Add user message to chat
+    const userMsg = {
+      id: Date.now(),
+      sender: 'user',
+      text: fileContent || `Processing ${FEATURE_CONFIG[featureKey].name}...`,
+      file: attachedFile || null,
+      timestamp: new Date(),
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+    setCurrentChat(prev => [...prev, userMsg]);
+
+    // Show typing indicator
+    const typingMsg = {
+      id: Date.now() + 1,
+      sender: 'bot',
+      text: 'AI is analyzing...',
+      isTyping: true,
+      timestamp: new Date(),
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+    setCurrentChat(prev => [...prev, typingMsg]);
+
+    // Prepare FormData
+    const formData = new FormData();
+    if (attachedFile?.file) {
+      formData.append('file', attachedFile.file);
+    }
+    if (fileContent) {
+      formData.append('case_text', fileContent);
+    }
+
+    // Make API call
+    const endpoint = MASTER_API_URL + FEATURE_CONFIG[featureKey].endpoint;
+    console.log('📡 API Call:', endpoint);
     
-    const mlProb = data.ml_prob ? (data.ml_prob * 100).toFixed(1) : 'N/A';
-    const mlRejectProb = data.ml_prob ? ((1 - data.ml_prob) * 100).toFixed(1) : 'N/A';
-    const confPercentage = data.ml_confidence ? (data.ml_confidence * 100).toFixed(1) : 'N/A';
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!response.ok) {
+      throw new Error(`API Error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log('✅ Response received:', data);
+
+    // ✅ FORMAT THE RESPONSE
+    let formattedText = '';
     
-    const relevanceNote = !bailRel.is_bail_case
-      ? `\n======================================================================
-⚠️  NOTE: This is a ${data.case_type || 'Legal Case'}, NOT a bail application
-   Bail mentions in judgment: ${bailRel.bail_mentions || 0}
-   Relevance score: ${bailRel.relevance_score || 0}%
-======================================================================\n`
-      : '';
+    if (featureKey === 'bail_analysis') {
+      formattedText = formatBailResponse(data, attachedFile?.name);
+    } else if (featureKey === 'judgment_prediction') {
+      formattedText = formatJudgmentResponse(data);
+    } else if (featureKey === 'case_summarization') {
+      formattedText = formatSummaryResponse(data);
+    } else if (featureKey === 'verdictx_qai') {
+      formattedText = data.response || data.result || JSON.stringify(data);
+    } else {
+      formattedText = data.result || data.message || JSON.stringify(data, null, 2);
+    }
 
-    const statusNote = bailRel.case_closed
-      ? `\n======================================================================
-📌 CASE STATUS: ${bailRel.case_status || 'Closed/Decided'}
-======================================================================\n`
-      : '';
+    // ✅ SET ACTIVE CONTEXT FOR FOLLOW-UP QUESTIONS
+    setActiveContext(featureKey);
+    setContextData(data);
 
-    const summaryText = data.summary && data.summary.length > 0
-      ? data.summary.map((point, i) => `${i + 1}. ${point}`).join('\n')
-      : 'No summary available.';
+    // Remove typing indicator and add real response
+    setCurrentChat(prev => {
+      const withoutTyping = prev.filter(msg => !msg.isTyping);
+      return [...withoutTyping, {
+        id: Date.now() + 2,
+        sender: 'bot',
+        text: formattedText,
+        timestamp: new Date(),
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        hasFollowup: true, // Flag to show follow-up is available
+        featureKey: featureKey
+      }];
+    });
 
-    const reasonsText = data.reasons && data.reasons.length > 0
-      ? data.reasons.map((point, i) => `${i + 1}. ${point}`).join('\n')
-      : 'No reasoning available.';
+    // Clear attached file
+    setAttachedFile(null);
+    
+  } catch (error) {
+    console.error('❌ API Error:', error);
+    
+    setCurrentChat(prev => {
+      const withoutTyping = prev.filter(msg => !msg.isTyping);
+      return [...withoutTyping, {
+        id: Date.now() + 2,
+        sender: 'bot',
+        text: `❌ Error: ${error.message}\n\nPlease check if the backend server is running.`,
+        timestamp: new Date(),
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }];
+    });
+  } finally {
+    setIsProcessingFile(false);
+  }
+};
 
-    const emoji = finalProb >= 60 ? '✅' : finalProb < 40 ? '❌' : '⚠️';
+// ============================================
+// PART 3: UPDATED handleSendMessage
+// Replace the message sending logic (around line 450)
+// ============================================
 
-    return `======================================================================
+const handleSendMessage = async () => {
+  if ((message.trim() || attachedFile) && !isBotTyping) {
+    let messageText = message;
+    let fileData = attachedFile;
+
+    setMessage('');
+    setAttachedFile(null);
+    
+    if (isEditing) {
+      // Edit logic remains same
+      setCurrentChat(prevChat => prevChat.map(msg => 
+        msg.id === editMessageId ? { ...msg, text: messageText } : msg
+      ));
+      setIsEditing(false);
+      setEditMessageId(null);
+      return;
+    }
+
+    // ✅ CHECK IF THIS IS A FOLLOW-UP QUESTION
+    if (activeContext && !fileData && messageText.trim()) {
+      await handleFollowUpQuestion(messageText, activeContext);
+      return;
+    }
+
+    // If a feature is selected and a file is attached, use the API call
+    if (selectedFeature && fileData) {
+      await handleFeatureAPICall(selectedFeature, messageText);
+      return;
+    }
+
+    // Regular chat flow (when no feature selected)
+    setIsBotTyping(true);
+    
+    const newMessage = {
+      text: messageText,
+      sender: 'user',
+      timestamp: Date.now(),
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      id: Date.now(),
+      file: fileData ? { name: fileData.name, url: fileData.url, type: fileData.type } : undefined
+    };
+    
+    let newChatId = currentChatId;
+
+    if (!currentChatId) {
+      newChatId = Date.now();
+      const newChat = {
+        id: newChatId,
+        title: 'New conversation',
+        date: 'Just now',
+        messages: [newMessage]
+      };
+      setChatHistory(prev => [newChat, ...prev]);
+      setCurrentChatId(newChatId);
+      StorageService.setCurrentChatId(newChatId);
+    }
+
+    const botPlaceholderId = Date.now() + 1;
+    const initialBotMessage = {
+      text: 'AI is thinking...', 
+      sender: 'bot',
+      timestamp: Date.now(),
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      isTyping: true,
+      id: botPlaceholderId
+    };
+    
+    setCurrentChat(prev => [...prev, newMessage, initialBotMessage]);
+
+    // Show welcome message after 2 seconds
+    setTimeout(() => {
+      setCurrentChat(prevChat => {
+        const lastMessageIndex = prevChat.findIndex(msg => msg.id === botPlaceholderId);
+        
+        if (lastMessageIndex !== -1) {
+          const updatedLastMessage = {
+            ...prevChat[lastMessageIndex],
+            text: '',
+            isWelcomeMessage: true,
+            isTyping: false,
+            timestamp: Date.now(),
+          };
+          return [...prevChat.slice(0, lastMessageIndex), updatedLastMessage];
+        }
+        return prevChat;
+      });
+      
+      setIsBotTyping(false);
+    }, 2000); 
+  }
+};
+
+// ============================================
+// PART 4: NEW FOLLOW-UP HANDLER
+// Add this new function after handleSendMessage
+// ============================================
+
+const handleFollowUpQuestion = async (question, featureKey) => {
+  try {
+    setIsBotTyping(true);
+
+    // Add user question to chat
+    const userMsg = {
+      id: Date.now(),
+      sender: 'user',
+      text: question,
+      timestamp: new Date(),
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+    setCurrentChat(prev => [...prev, userMsg]);
+
+    // Add typing indicator
+    const typingMsg = {
+      id: Date.now() + 1,
+      sender: 'bot',
+      text: 'AI is thinking...',
+      isTyping: true,
+      timestamp: new Date(),
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+    setCurrentChat(prev => [...prev, typingMsg]);
+
+    // Determine the correct follow-up endpoint
+    let followupEndpoint = '';
+    if (featureKey === 'bail_analysis') {
+      followupEndpoint = '/predict/followup/bail';
+    } else if (featureKey === 'judgment_prediction') {
+      followupEndpoint = '/predict/followup/judgment';
+    } else if (featureKey === 'case_summarization') {
+      followupEndpoint = '/predict/followup/summary';
+    } else if (featureKey === 'verdictx_qai') {
+      followupEndpoint = '/qa/followup';
+    }
+
+    // Make API call
+    const formData = new FormData();
+    formData.append('question', question);
+
+    const response = await fetch(MASTER_API_URL + followupEndpoint, {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!response.ok) {
+      throw new Error(`Follow-up API Error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log('✅ Follow-up response:', data);
+
+    // Format response
+    const answerText = data.status === "success" 
+      ? formatFollowUpResponse(data.response, featureKey)
+      : `❌ Error: ${data.error || "Unknown error"}`;
+
+    // Remove typing indicator and add response
+    setCurrentChat(prev => {
+      const withoutTyping = prev.filter(msg => !msg.isTyping);
+      return [...withoutTyping, {
+        id: Date.now() + 2,
+        sender: 'bot',
+        text: answerText,
+        timestamp: new Date(),
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        isFollowUp: true
+      }];
+    });
+
+  } catch (error) {
+    console.error('❌ Follow-up Error:', error);
+    
+    setCurrentChat(prev => {
+      const withoutTyping = prev.filter(msg => !msg.isTyping);
+      return [...withoutTyping, {
+        id: Date.now() + 2,
+        sender: 'bot',
+        text: `❌ Error: ${error.message}`,
+        timestamp: new Date(),
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }];
+    });
+  } finally {
+    setIsBotTyping(false);
+  }
+};
+
+// ============================================
+// PART 5: FORMATTING FUNCTIONS
+// Add these after handleFollowUpQuestion
+// ============================================
+
+const formatBailResponse = (data, fileName) => {
+  if (data.status !== "success") {
+    return `❌ Error: ${data.error || "Unknown error"}`;
+  }
+
+  const bailRel = data.bail_relevance || {};
+  const verdict = data.verdict_info?.verdict || "VERDICT NOT CLEAR";
+  
+  const finalProb = data.final_verdict_prob ? (data.final_verdict_prob * 100).toFixed(1) : "N/A";
+  const finalRejectProb = data.final_verdict_prob ? ((1 - data.final_verdict_prob) * 100).toFixed(1) : "N/A";
+  const finalVerdict = data.final_verdict_text || "UNCERTAIN";
+  
+  const summaryText = data.summary && data.summary.length > 0
+    ? data.summary.map((point, i) => `${i + 1}. ${point}`).join("\n")
+    : "No summary available.";
+  
+  const reasonsText = data.reasons && data.reasons.length > 0
+    ? data.reasons.map((point, i) => `${i + 1}. ${point}`).join("\n")
+    : "No reasoning available.";
+
+  const relevanceNote = !bailRel.is_bail_case
+    ? `\n${"=".repeat(70)}\n⚠  NOTE: This is a ${data.case_type || "Legal Case"}, NOT a bail application\n   Bail mentions in judgment: ${bailRel.bail_mentions || 0}\n   Relevance score: ${bailRel.relevance_score || 0}%\n${"=".repeat(70)}\n`
+    : "";
+
+  const statusNote = bailRel.case_closed
+    ? `\n${"=".repeat(70)}\n📌 CASE STATUS: ${bailRel.case_status || "Closed/Decided"}\n${"=".repeat(70)}\n`
+    : "";
+
+  const emoji = finalProb >= 60 ? "✅" : finalProb < 40 ? "❌" : "⚠";
+
+  return `${"=".repeat(70)}
 📋 CASE ANALYSIS RESULTS
-======================================================================
+${"=".repeat(70)}
 
-⚖️  CASE TYPE: ${data.case_type || 'Unknown'}
+📁 FILE: ${fileName || "Uploaded Document"}
+
+⚖  CASE TYPE: ${data.case_type || "Unknown"}
 ${statusNote}${relevanceNote}
-======================================================================
+${"=".repeat(70)}
 📖 CASE SUMMARY
-======================================================================
+${"=".repeat(70)}
 ${summaryText}
 
-======================================================================
+${"=".repeat(70)}
 🎓 LEGAL ANALYSIS (IRAC Method)
-======================================================================
-${data.irac_analysis || 'No IRAC analysis available.'}
+${"=".repeat(70)}
+${data.irac_analysis || "No IRAC analysis available."}
+
+${"=".repeat(70)}
+🏛  VERDICT: ${verdict}
+${"=".repeat(70)}
 
 📊 BAIL PREDICTION
-----------------------------------------------------------------------
+${"-".repeat(70)}
 
 Final Verdict: ${finalVerdict}
 Bail Grant Probability: ${finalProb}%
@@ -233,61 +610,199 @@ Bail Reject Probability: ${finalRejectProb}%
 
 ${emoji} FINAL TENDENCY: ${finalVerdict}
 
-======================================================================
+${"=".repeat(70)}
 📝 KEY LEGAL REASONING
-======================================================================
+${"=".repeat(70)}
 ${reasonsText}
 
-======================================================================
+${"=".repeat(70)}
 ✅ ANALYSIS COMPLETE
-======================================================================`;
-  }
+${"=".repeat(70)}
 
-  if (featureKey === 'case_summarization') {
-    return `
-${data.summary || 'No summary available.'}`;
-  }
-
-  if (featureKey === 'verdictx_qai') {
-    return `======================================================================
-⚖️  LEGAL RESPONSE
-======================================================================
-${data.response || 'No response available.'}`;
-  }
-
-  if (featureKey === 'information_extraction') {
-    const extractedEntities = data.extracted_entities || {};
-    const draftedDocuments = data.drafted_documents || [];
-
-    const entitiesText = Object.keys(extractedEntities).length > 0
-      ? Object.entries(extractedEntities).map(([key, value]) => `${key}: ${value}`).join('\n')
-      : 'No entities extracted.';
-
-    const documentsText = draftedDocuments.length > 0
-      ? draftedDocuments.map((doc, i) => `${i + 1}. ${doc.title}\n${doc.content}`).join('\n\n')
-      : 'No documents drafted.';
-
-    return `======================================================================
-📄 INFORMATION EXTRACTION & DOCUMENT DRAFTING
-======================================================================
-
-🔍 EXTRACTED INFORMATION
-----------------------------------------------------------------------
-${entitiesText}
-
-📝 DRAFTED DOCUMENTS
-----------------------------------------------------------------------
-${documentsText}
-
-======================================================================
-✅ EXTRACTION & DRAFTING COMPLETE
-======================================================================`;
-  }
-
-  return JSON.stringify(data, null, 2);
+💡 You can now ask follow-up questions about this bail case.`;
 };
 
+const formatJudgmentResponse = (data) => {
+  if (data.status !== "success") {
+    return `❌ Error: ${data.error || "Unknown error"}`;
+  }
+
+  const precedentsText = data.precedents?.length
+    ? data.precedents.map((p, i) => `
+${i + 1}. [${p.outcome}] (Similarity: ${(p.similarity * 100).toFixed(1)}%)
+${p.text}
+    `).join("\n")
+    : "No similar precedents found.";
+
+  return `${"=".repeat(70)}
+⚖  CASE TYPE: ${data.case_type || "Unknown"}
+${"=".repeat(70)}
+
+🎯 PREDICTION: ${data.prediction}
+   Confidence: ${data.confidence || "N/A"}%
+   (Grant: ${data.grant_probability || 0}% | Reject: ${data.reject_probability || 0}%)
+
+${"=".repeat(70)}
+LEGAL ANALYSIS (Case Summary + IRAC)
+${"=".repeat(70)}
+${data.llm_analysis || "No IRAC analysis available."}
+
+${"=".repeat(70)}
+SIMILAR PRECEDENTS (Top ${data.precedents?.length || 0})
+${"=".repeat(70)}
+${precedentsText}
+
+${"=".repeat(70)}
+✅ ANALYSIS COMPLETE
+${"=".repeat(70)}
+
+💡 You can now ask follow-up questions about this judgment.`;
+};
+
+const formatSummaryResponse = (data) => {
+  if (data.status !== "success") {
+    return `❌ Error: ${data.error || "Unknown error"}`;
+  }
+
+  return `${"=".repeat(70)}
+📜 STRUCTURED CASE SUMMARY
+${"=".repeat(70)}
+${data.summary}
+
+${"=".repeat(70)}
+✅ SUMMARY COMPLETE
+${"=".repeat(70)}
+
+💡 You can now ask follow-up questions about this summary.`;
+};
+
+const formatFollowUpResponse = (response, featureKey) => {
+  const icons = {
+    'bail_analysis': '🔓',
+    'judgment_prediction': '⚖',
+    'case_summarization': '📜',
+    'verdictx_qai': '🤖'
+  };
+
+  const icon = icons[featureKey] || '💬';
+
+  return `${"=".repeat(70)}
+${icon} FOLLOW-UP ANSWER
+${"=".repeat(70)}
+${response}
+${"=".repeat(70)}`;
+};
+
+// ============================================
+// PART 6: UPDATE MESSAGE DISPLAY
+// Find the message text rendering (around line 650) and update:
+// ============================================
+
+// Replace the text display section with this:
+{msg.text && (
+  <div style={{ 
+    margin: 0,
+    fontSize: '14px',
+    lineHeight: '1.6',
+    color: msg.sender === 'user' ? '#fff' : colors.textPrimary,
+    textAlign: 'left', // Always left-align for better readability
+    whiteSpace: 'pre-wrap',  // ✅ Preserves formatting
+    fontFamily: msg.sender === 'bot' && !msg.isFollowUp ? 'Consolas, Monaco, monospace' : 'Alata, sans-serif',
+    backgroundColor: msg.sender === 'bot' && !msg.isFollowUp ? (isDarkMode ? '#0a0a0a' : '#f8f9fa') : 'transparent',
+    padding: msg.sender === 'bot' && !msg.isFollowUp ? '12px' : '0',
+    borderRadius: msg.sender === 'bot' && !msg.isFollowUp ? '8px' : '0',
+    border: msg.sender === 'bot' && !msg.isFollowUp ? `1px solid ${colors.border}` : 'none',
+    overflowX: 'auto' // Allows horizontal scrolling for long lines
+  }}>
+    {msg.text}
+  </div>
+)}
+
+// ============================================
+// PART 7: ADD CONTEXT INDICATOR
+// Add this after the header (around line 550) to show active context
+// ============================================
+
+{activeContext && (
+  <div style={{
+    padding: '8px 24px',
+    backgroundColor: isDarkMode ? '#1a1a1a' : '#f0f9ff',
+    borderBottom: `1px solid ${colors.border}`,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    fontSize: '13px',
+    color: colors.textPrimary
+  }}
+  data-print-hide="true"
+  >
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <span style={{ fontSize: '16px' }}>{FEATURE_CONFIG[activeContext]?.icon}</span>
+      <span style={{ fontFamily: 'Alata, sans-serif' }}>
+        <strong>Active Context:</strong> {FEATURE_CONFIG[activeContext]?.name}
+      </span>
+      <span style={{ 
+        padding: '2px 8px', 
+        backgroundColor: '#10b981', 
+        color: 'white', 
+        borderRadius: '12px',
+        fontSize: '11px',
+        fontWeight: '600'
+      }}>
+        Follow-up Ready
+      </span>
+    </div>
+    <button
+      onClick={() => {
+        setActiveContext(null);
+        setContextData(null);
+        setSelectedFeature(null);
+      }}
+      style={{
+        padding: '4px 12px',
+        backgroundColor: 'transparent',
+        border: `1px solid ${colors.border}`,
+        borderRadius: '6px',
+        cursor: 'pointer',
+        fontSize: '12px',
+        color: colors.textPrimary,
+        fontFamily: 'Alata, sans-serif'
+      }}
+      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = colors.bgPrimary}
+      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+    >
+      Clear Context
+    </button>
+  </div>
+)
+}
+// Main application component with all the functionality
 function AppContent() {
+  // Add print styles
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+      @media print {
+        [data-print-hide="true"] {
+          display: none !important;
+        }
+        .print-hidden {
+          display: none !important;
+        }
+        .no-print {
+          display: none !important;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, []);
+
+  // ------------------------------------------------
+  // State and Refs
+  // ------------------------------------------------
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
@@ -304,52 +819,252 @@ function AppContent() {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [currentChat, setCurrentChat] = useState([]);
   
+  // File input refs
   const fileInputRef = useRef(null);
   const photoInputRef = useRef(null);
 
+  // NEW: Store selected file data separately
   const [attachedFile, setAttachedFile] = useState(null);
+
+  // NEW: Feature selection state
   const [selectedFeature, setSelectedFeature] = useState(null);
   const [isProcessingFile, setIsProcessingFile] = useState(false);
+
+  // Format API response from JSON to readable text format
+  const formatBotResponse = (data) => {
+    if (typeof data === 'string') {
+      return data;
+    }
+    
+    if (typeof data === 'object' && data !== null) {
+      // Check for common result/message fields
+      if (data.result) {
+        return typeof data.result === 'string' ? data.result : formatBotResponse(data.result);
+      }
+      if (data.message) {
+        return typeof data.message === 'string' ? data.message : formatBotResponse(data.message);
+      }
+      if (data.prediction) {
+        return typeof data.prediction === 'string' ? data.prediction : formatBotResponse(data.prediction);
+      }
+      if (data.summary) {
+        return typeof data.summary === 'string' ? data.summary : formatBotResponse(data.summary);
+      }
+      if (data.response) {
+        return typeof data.response === 'string' ? data.response : formatBotResponse(data.response);
+      }
+      
+      // If it's an object without recognized fields, format it as readable text
+      let formattedText = '';
+      for (const [key, value] of Object.entries(data)) {
+        if (key.toLowerCase() !== 'status' && key.toLowerCase() !== 'code') {
+          const displayKey = key
+            .replace(/_/g, ' ')
+            .replace(/([A-Z])/g, ' $1')
+            .toLowerCase()
+            .trim()
+            .replace(/^\w/, c => c.toUpperCase());
+          
+          if (typeof value === 'object') {
+            formattedText += `${displayKey}:\n${JSON.stringify(value, null, 2)}\n\n`;
+          } else {
+            formattedText += `${displayKey}: ${value}\n`;
+          }
+        }
+      }
+      return formattedText.trim() || JSON.stringify(data, null, 2);
+    }
+    
+    return JSON.stringify(data, null, 2);
+  };
+
+  // API Integration Function for Master API
+  const handleFeatureAPICall = async (featureKey, fileContent) => {
+    if (!FEATURE_CONFIG[featureKey]) {
+      console.error('Invalid feature:', featureKey);
+      return;
+    }
+
+    try {
+      setIsProcessingFile(true);
+      
+      // Add user message to chat
+      const userMsg = {
+        id: Date.now(),
+        sender: 'user',
+        text: fileContent || `Processing ${FEATURE_CONFIG[featureKey].name}...`,
+        file: attachedFile || null,
+        timestamp: new Date(),
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+      setCurrentChat(prev => [...prev, userMsg]);
+
+      // Prepare FormData for file upload if file exists
+      const formData = new FormData();
+      if (attachedFile?.file) {
+        formData.append('file', attachedFile.file);
+      }
+      if (fileContent) {
+        formData.append('case_text', fileContent);
+      }
+
+      // Make API call to Master API
+      const endpoint = MASTER_API_URL + FEATURE_CONFIG[featureKey].endpoint;
+      console.log('Making API call to:', endpoint);
+      console.log('FormData keys:', Array.from(formData.keys()));
+      
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        body: formData
+        // NOTE: Do NOT set Content-Type header when using FormData
+        // The browser will automatically set it with proper boundary
+      });
+
+      console.log('API Response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('API Error response:', errorText);
+        throw new Error(`API Error: ${response.status} ${response.statusText} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      console.log('API Response data:', data);
+
+      // Format response from JSON to readable text format
+      const formattedResponse = formatBotResponse(data);
+
+      // Add bot response to chat - preserve selectedFeature so user can ask follow-up questions
+      const botMsg = {
+        id: Date.now() + 1,
+        sender: 'bot',
+        text: formattedResponse,
+        timestamp: new Date(),
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+      setCurrentChat(prev => [...prev, botMsg]);
+
+      // Clear attached file after successful submission
+      setAttachedFile(null);
+      // Keep selectedFeature so user can continue with follow-up questions or switch to another feature
+    } catch (error) {
+      console.error('API Error:', error);
+      const errorMsg = {
+        id: Date.now() + 1,
+        sender: 'bot',
+        text: `Error: ${error.message}. Please check if your teammate's backend server is running with ngrok tunnel active at ${MASTER_API_URL}`,
+        timestamp: new Date(),
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+      setCurrentChat(prev => [...prev, errorMsg]);
+    } finally {
+      setIsProcessingFile(false);
+    }
+  };
+
+  // Handle file attachment and display in message input
+  const handleFileAttachment = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      // Create a file preview URL
+      const fileObj = {
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        file: file,
+        url: URL.createObjectURL(file)
+      };
+      setAttachedFile(fileObj);
+      setMessage(''); // Clear message input, we'll display file preview separately
+      event.target.value = '';
+    }
+    setShowAttachMenu(false);
+  };
+
+  // Handle photo attachment and display in message input
+  const handlePhotoAttachment = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      if (file.type.startsWith('image/')) {
+        const fileObj = {
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          file: file,
+          url: URL.createObjectURL(file)
+        };
+        setAttachedFile(fileObj);
+        setMessage(''); // Clear message input, we'll display image preview separately
+      } else {
+        alert('Please select an image file');
+      }
+      event.target.value = '';
+    }
+    setShowAttachMenu(false);
+  };
 
   const [currentChatId, setCurrentChatId] = useState(null);
   const [linkCopied, setLinkCopied] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
-  const [isBotTyping, setIsBotTyping] = useState(false);
+  const [isBotTyping, setIsBotTyping] = useState(false); 
   
+  // NEW: Editing state
   const [isEditing, setIsEditing] = useState(false);
   const [editMessageId, setEditMessageId] = useState(null);
+  
+  // NEW: Emoji picker state
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  
+  // Dark Mode
   const [isDarkMode, setIsDarkMode] = useState(false);
+  // Search
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // NEW: Hover state for message actions & Reaction Picker
   const [hoveredMessageId, setHoveredMessageId] = useState(null);
   const [reactionPickerId, setReactionPickerId] = useState(null);
-  const [chatHistory, setChatHistory] = useState([]);
 
+  // Refs for auto-scrolling chat history
   const chatContainerRef = useRef(null);
 
+  // Dynamic Color Scheme based on Dark Mode
   const colors = {
-    bgApp: isDarkMode ? '#121212' : 'white',
-    bgPrimary: isDarkMode ? '#242424' : '#f9fafb',
-    textPrimary: isDarkMode ? 'white' : '#1f2937',
-    textSecondary: isDarkMode ? '#9ca3af' : '#6b7280',
-    border: isDarkMode ? '#4b5563' : '#e5e7eb',
-    chatBubbleUser: isDarkMode ? '#10b981' : '#3b82f6',
-    chatBubbleBot: isDarkMode ? '#242424' : '#f3f4f6',
-    chatActive: isDarkMode ? '#2563eb' : '#e0e7ff',
-    inputBorder: isDarkMode ? '#6b7280' : '#d1d5db',
-    inputBg: isDarkMode ? '#121212' : 'white',
+      // FIX: Use a deep, uniform color for main app background/header background
+      bgApp: isDarkMode ? '#121212' : 'white', 
+      bgPrimary: isDarkMode ? '#242424' : '#f9fafb', // Slightly lighter dark background for containers/sidebar
+      textPrimary: isDarkMode ? 'white' : '#1f2937',
+      textSecondary: isDarkMode ? '#9ca3af' : '#6b7280',
+      border: isDarkMode ? '#4b5563' : '#e5e7eb',
+      chatBubbleUser: isDarkMode ? '#10b981' : '#3b82f6',
+      chatBubbleBot: isDarkMode ? '#242424' : '#f3f4f6', // Chat bubble background matching bgPrimary
+      chatActive: isDarkMode ? '#2563eb' : '#e0e7ff',
+      inputBorder: isDarkMode ? '#6b7280' : '#d1d5db',
+      inputBg: isDarkMode ? '#121212' : 'white', // Input box background matching bgApp
   };
 
+  // Mock data (replace with Firestore/API logic in a real app)
+  const [users, setUsers] = useState([]);
+
+  const [chatHistory, setChatHistory] = useState([]);
+
+  // ------------------------------------------------
+  // Persistent Storage and Initial Load
+  // ------------------------------------------------
+
+  // Load state from storage on mount
   useEffect(() => {
+    // Load user from storage
     const savedUser = StorageService.getUser();
     if (savedUser) {
       setCurrentUser(savedUser);
       setIsLoggedIn(true);
     }
     
+    // Load all chats
     const chats = StorageService.getAllChats(savedUser?.id);
     setChatHistory(chats);
     
+    // Restore last active chat
     const lastChatId = StorageService.getCurrentChatId();
     if (lastChatId) {
       const lastChat = StorageService.getChat(lastChatId);
@@ -358,12 +1073,27 @@ function AppContent() {
         setCurrentChat(lastChat.messages || []);
       }
     }
-  }, []);
+  }, []); // Run only once on mount
 
+
+  // This section has been replaced with StorageService.saveChat() calls
+
+
+  // ------------------------------------------------
+  // Filtered Chat History for sidebar search
+  // ------------------------------------------------
   const filteredChatHistory = chatHistory.filter(chat =>
     chat.title.toLowerCase().includes(searchTerm.toLowerCase())
   );
+  
+  // ------------------------------------------------
+  // EFFECTS (other)
+  // ------------------------------------------------
+  useEffect(() => {
+    setLoginForm({ email: '', password: '' });
+  }, []);
 
+  // AUTO-SCROLL TO BOTTOM when currentChat changes
   useEffect(() => {
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
@@ -385,8 +1115,10 @@ function AppContent() {
     if (currentChatId && currentChat.length > 0) {
       const newTitle = generateChatTitle(currentChat);
       
+      // Save to storage
       StorageService.saveChat(currentChatId, currentChat, newTitle);
       
+      // Update state
       setChatHistory(prevHistory => {
         return prevHistory.map(chat => {
           if (String(chat.id) === String(currentChatId)) {
@@ -402,7 +1134,17 @@ function AppContent() {
       });
     }
   }, [currentChat, currentChatId]);
+  
+  useEffect(() => {
+    return () => {};
+  }, []);
 
+  // ------------------------------------------------
+  // HANDLERS
+  // ------------------------------------------------
+  // Auth Handlers (retained)
+  const handleLogin = (e) => { e.preventDefault(); setLoginError(''); const user = users.find(u => u.email === loginForm.email && u.password === loginForm.password); if (user) { setCurrentUser(user); setIsLoggedIn(true); localStorage.setItem('user', JSON.stringify(user)); } else { setLoginError('Invalid email or password'); } };
+  const handleSignup = (e) => { e.preventDefault(); /* ... signup logic ... */ const newUser = { id: users.length + 1, name: signupForm.name, email: signupForm.email, password: signupForm.password }; setUsers([...users, newUser]); setCurrentUser(newUser); setIsLoggedIn(true); setChatHistory([]); localStorage.setItem('user', JSON.stringify(newUser)); };
   const handleLogout = () => { 
     setIsLoggedIn(false); 
     setCurrentUser(null); 
@@ -411,184 +1153,35 @@ function AppContent() {
     setLoginForm({ email: '', password: '' }); 
     setShowUserMenu(false); 
     setChatHistory([]);
-    setSelectedFeature(null);
     
+    // Clear from storage
     StorageService.clearUser();
     StorageService.clearCurrentChatId();
   };
-
-  const handleExportPdf = () => {
-    if (currentChat.length === 0) {
-      alert('No chat messages to export');
-      return;
-    }
-
-    // Create HTML content for PDF
-    const htmlContent = `
-      <html>
-        <head>
-          <meta charset="UTF-8">
-          <style>
-            body {
-              font-family: 'Alata', 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-              line-height: 1.6;
-              color: #1f2937;
-              margin: 0;
-              padding: 20px;
-              background-color: white;
-            }
-            .header {
-              text-align: center;
-              margin-bottom: 30px;
-              border-bottom: 2px solid #3b82f6;
-              padding-bottom: 15px;
-            }
-            .header h1 {
-              color: #3b82f6;
-              margin: 0;
-              font-size: 28px;
-            }
-            .header-info {
-              color: #6b7280;
-              margin: 8px 0 0 0;
-              font-size: 13px;
-            }
-            .chat-container {
-              max-width: 900px;
-              margin: 0 auto;
-            }
-            .message {
-              margin-bottom: 16px;
-              page-break-inside: avoid;
-            }
-            .user-message {
-              background-color: #dbeafe;
-              color: #1f2937;
-              padding: 12px 16px;
-              border-radius: 12px;
-              margin-left: 80px;
-              border-left: 4px solid #3b82f6;
-            }
-            .bot-message {
-              background-color: #f3f4f6;
-              color: #1f2937;
-              padding: 12px 16px;
-              border-radius: 12px;
-              margin-right: 80px;
-              border-left: 4px solid #9ca3af;
-            }
-            .message-label {
-              font-weight: 600;
-              font-size: 12px;
-              margin-bottom: 4px;
-              color: #4b5563;
-            }
-            .message-text {
-              white-space: pre-wrap;
-              word-break: break-word;
-              font-size: 14px;
-            }
-            .message-time {
-              font-size: 11px;
-              color: #9ca3af;
-              margin-top: 6px;
-              font-style: italic;
-            }
-            .footer {
-              margin-top: 40px;
-              padding-top: 15px;
-              border-top: 1px solid #e5e7eb;
-              text-align: center;
-              color: #6b7280;
-              font-size: 12px;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>⚖️ VerdictX Chat Export</h1>
-            <div class="header-info">
-              <p style="margin: 5px 0;">Date: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
-              <p style="margin: 5px 0;">Time: ${new Date().toLocaleTimeString()}</p>
-              <p style="margin: 5px 0;">User: ${currentUser?.name || 'Unknown'}</p>
-              ${selectedFeature ? `<p style="margin: 5px 0;">Feature: ${FEATURE_CONFIG[selectedFeature]?.name || 'Unknown'}</p>` : '<p style="margin: 5px 0;">Feature: Multiple</p>'}
-            </div>
-          </div>
-          
-          <div class="chat-container">
-            ${currentChat.map((msg) => `
-              <div class="message">
-                <div class="${msg.sender === 'user' ? 'user-message' : 'bot-message'}">
-                  <div class="message-label">${msg.sender === 'user' ? '👤 You' : '🤖 VerdictX'}</div>
-                  <div class="message-text">${(msg.text || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
-                  <div class="message-time">${msg.time || new Date().toLocaleTimeString()}</div>
-                </div>
-              </div>
-            `).join('')}
-          </div>
-          
-          <div class="footer">
-            <p style="margin: 5px 0;">© VerdictX - AI Legal Assistant | Confidential</p>
-            <p style="margin: 5px 0;">Generated on: ${new Date().toLocaleString()}</p>
-          </div>
-        </body>
-      </html>
-    `;
-
-    // Use html2pdf to generate and download PDF
-    const element = document.createElement('div');
-    element.innerHTML = htmlContent;
-    
-    const opt = {
-      margin: 8,
-      filename: `VerdictX_Chat_${new Date().getTime()}.pdf`,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true },
-      jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4' }
-    };
-
-    // Generate PDF
-    // eslint-disable-next-line no-undef
-    if (typeof html2pdf !== 'undefined') {
-      // eslint-disable-next-line no-undef
-      html2pdf().set(opt).from(element).save();
-    } else {
-      // Fallback to text download if html2pdf is not available
-      const textContent = `
-VerdictX Chat Export
-================================================================================
-Date: ${new Date().toLocaleDateString()}
-Time: ${new Date().toLocaleTimeString()}
-User: ${currentUser?.name || 'Unknown'}
-Feature: ${selectedFeature ? FEATURE_CONFIG[selectedFeature]?.name : 'Multiple'}
-================================================================================
-
-${currentChat.map((msg) => {
-  const sender = msg.sender === 'user' ? '👤 YOU' : '🤖 VERDICTX';
-  return `[${msg.time || ''}] ${sender}:\n${msg.text || '(No text)'}\n\n`;
-}).join('')}
-================================================================================
-© VerdictX - AI Legal Assistant | Confidential
-Generated on: ${new Date().toLocaleString()}
-      `;
-
-      const blob = new Blob([textContent], { type: 'text/plain' });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `VerdictX_Chat_${new Date().getTime()}.txt`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-    }
+  
+  // Mock Google Sign-In Success Handler (Fallback for direct button click, though handled by component now)
+  const handleMockGoogleSignIn = () => { 
+    console.log('Google Sign-In attempted (Mocked fallback)'); 
+    const mockUser = { id: 'google-user-123', name: 'Google User', email: 'mock@google.com' };
+    setCurrentUser(mockUser); 
+    setIsLoggedIn(true); 
+    localStorage.setItem('user', JSON.stringify(mockUser));
+    // Simulate initial chat load from DB after user logs in
+    setChatHistory(fetchAllChatsFromDB(mockUser.id)); 
   };
 
+  // NEW HANDLER: Export Chat to PDF
+  const handleExportPdf = () => {
+      window.print();
+  };
+
+  // NEW HANDLER: Insert Emoji (for message composition)
   const handleEmojiSelect = (emoji) => {
     setMessage(prev => prev + emoji);
     setShowEmojiPicker(false);
   };
 
+  // NEW HANDLER: Add Message Reaction (Mock)
   const handleReaction = (messageId, emoji) => {
     setCurrentChat(prevChat => prevChat.map(msg => {
       if (msg.id === messageId) {
@@ -604,10 +1197,12 @@ Generated on: ${new Date().toLocaleString()}
     setReactionPickerId(null);
   };
 
+  // NEW HANDLER: Delete Message
   const deleteMessage = (messageId) => {
     setCurrentChat(prevChat => prevChat.filter(msg => msg.id !== messageId));
   };
   
+  // NEW HANDLER: Edit Message Start
   const startEditMessage = (messageObj) => {
     if (messageObj.sender === 'user') {
       setIsEditing(true);
@@ -617,288 +1212,7 @@ Generated on: ${new Date().toLocaleString()}
     }
   };
 
-  const handleFeatureAPICall = async (featureKey, messageText) => {
-    if (!FEATURE_CONFIG[featureKey]) {
-      console.error('Invalid feature:', featureKey);
-      return;
-    }
-
-    const config = FEATURE_CONFIG[featureKey];
-
-    try {
-      setIsBotTyping(true);
-      
-      const userMsg = {
-        id: Date.now(),
-        sender: 'user',
-        text: messageText || `Processing ${config.name}...`,
-        file: attachedFile || null,
-        timestamp: new Date(),
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-      setCurrentChat(prev => [...prev, userMsg]);
-
-      const formData = new FormData();
-      
-      if (config.inputType === 'pdf' || config.inputType === 'both') {
-        if (attachedFile?.file) {
-          formData.append('file', attachedFile.file);
-          console.log('Appended file:', attachedFile.file.name, 'Type:', attachedFile.file.type);
-        }
-      }
-      
-      if (config.inputType === 'text' || config.inputType === 'both') {
-        if (messageText) {
-          formData.append(config.inputType === 'text' ? 'question' : 'case_text', messageText);
-        }
-      }
-
-      // Use /api/extract-and-download for information_extraction (both PDF and Image)
-      let endpoint = config.apiUrl + config.endpoint;
-      if (selectedFeature === 'information_extraction') {
-        endpoint = config.apiUrl + '/api/extract-and-download';
-        console.log('Using extract-and-download for:', endpoint);
-      }
-      
-      console.log('Making API call to:', endpoint);
-      
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        body: formData
-      });
-
-      console.log('API Response status:', response.status);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('API Error response:', errorText);
-        throw new Error(`API Error: ${response.status} ${response.statusText}`);
-      }
-
-      // Check if response is PDF, Image, or JSON (for information_extraction feature)
-      const contentType = response.headers.get('content-type');
-      
-      if (contentType && (contentType.includes('application/pdf') || contentType.includes('image/'))) {
-        // Handle file download for information_extraction (PDF or Image)
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.style.display = 'none';
-        a.href = url;
-        
-        // Get filename from Content-Disposition header
-        const contentDisposition = response.headers.get('Content-Disposition');
-        let filename = 'extracted_file';
-        if (contentType.includes('application/pdf')) {
-          filename = filename + '.pdf';
-        } else if (contentType.includes('image/png')) {
-          filename = filename + '.png';
-        } else if (contentType.includes('image/jpeg')) {
-          filename = filename + '.jpg';
-        } else if (contentType.includes('image/')) {
-          filename = filename + '.img';
-        }
-        
-        if (contentDisposition) {
-          const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
-          if (filenameMatch && filenameMatch[1]) {
-            filename = filenameMatch[1].replace(/['"]/g, '');
-          }
-        }
-        
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-
-        const botMsg = {
-          id: Date.now() + 1,
-          sender: 'bot',
-          text: `✅ Document extracted and downloaded successfully!\n\nFile: ${filename}`,
-          timestamp: new Date(),
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          featureKey: featureKey
-        };
-        setCurrentChat(prev => [...prev, botMsg]);
-      } else if (contentType && contentType.includes('application/json')) {
-        // Handle JSON response (extracted data from image or other sources)
-        const data = await response.json();
-        console.log('API Response data:', data);
-
-        if (data.status === 'error') {
-          throw new Error(data.error || 'Unknown error from API');
-        }
-
-        // For information_extraction feature, format the response nicely
-        let formattedText;
-        if (selectedFeature === 'information_extraction') {
-          formattedText = formatStructuredResponse(data, featureKey);
-        } else {
-          formattedText = formatStructuredResponse(data, featureKey);
-        }
-
-        const botMsg = {
-          id: Date.now() + 1,
-          sender: 'bot',
-          text: formattedText,
-          timestamp: new Date(),
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          featureKey: featureKey
-        };
-        setCurrentChat(prev => [...prev, botMsg]);
-      } else {
-        // Handle other response types
-        const data = await response.json();
-        console.log('API Response data:', data);
-
-        if (data.status === 'error') {
-          throw new Error(data.error || 'Unknown error from API');
-        }
-
-        const formattedText = formatStructuredResponse(data, featureKey);
-
-        const botMsg = {
-          id: Date.now() + 1,
-          sender: 'bot',
-          text: formattedText,
-          timestamp: new Date(),
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          featureKey: featureKey
-        };
-        setCurrentChat(prev => [...prev, botMsg]);
-      }
-
-      setAttachedFile(null);
-      setMessage('');
-      
-    } catch (error) {
-      console.error('API Error:', error);
-      const apiUrl = config.apiUrl;
-      const errorMsg = {
-        id: Date.now() + 1,
-        sender: 'bot',
-        text: `❌ Error: ${error.message}\n\nPlease check if the backend server is running at ${apiUrl}`,
-        timestamp: new Date(),
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-      setCurrentChat(prev => [...prev, errorMsg]);
-    } finally {
-      setIsBotTyping(false);
-    }
-  };
-
-  const handleFollowupQuestion = async (question) => {
-    if (!selectedFeature || !question.trim()) return;
-
-    const config = FEATURE_CONFIG[selectedFeature];
-    if (!config || !config.followupEndpoint) return;
-
-    try {
-      setIsBotTyping(true);
-
-      const userMsg = {
-        id: Date.now(),
-        sender: 'user',
-        text: question,
-        timestamp: new Date(),
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-      setCurrentChat(prev => [...prev, userMsg]);
-
-      // Build conversation history for context
-      const conversationHistory = currentChat
-        .filter(msg => !msg.isWelcomeMessage && !msg.isTyping)
-        .map(msg => ({
-          sender: msg.sender,
-          text: msg.text
-        }));
-
-      const formData = new FormData();
-      formData.append('question', question);
-      formData.append('conversation_history', JSON.stringify(conversationHistory));
-
-      const endpoint = config.apiUrl + config.followupEndpoint;
-      console.log('Making followup API call to:', endpoint);
-      
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        body: formData
-      });
-
-      if (!response.ok) {
-        throw new Error(`API Error: ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      if (data.status === 'error') {
-        throw new Error(data.error || 'Unknown error');
-      }
-
-      const botMsg = {
-        id: Date.now() + 1,
-        sender: 'bot',
-        text: `======================================================================\n⚖️ FOLLOW-UP ANSWER\n======================================================================\n${data.response || 'No response available.'}`,
-        timestamp: new Date(),
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        featureKey: selectedFeature
-      };
-      setCurrentChat(prev => [...prev, botMsg]);
-
-    } catch (error) {
-      console.error('Followup API Error:', error);
-      const errorMsg = {
-        id: Date.now() + 1,
-        sender: 'bot',
-        text: `❌ Error: ${error.message}`,
-        timestamp: new Date(),
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-      setCurrentChat(prev => [...prev, errorMsg]);
-    } finally {
-      setIsBotTyping(false);
-    }
-  };
-
-  const handleFileAttachment = (event) => {
-    const file = event.target.files[0];
-    if (file) {
-      const fileObj = {
-        name: file.name,
-        type: file.type,
-        size: file.size,
-        file: file,
-        url: URL.createObjectURL(file)
-      };
-      setAttachedFile(fileObj);
-      setMessage('');
-      event.target.value = '';
-    }
-    setShowAttachMenu(false);
-  };
-
-  const handlePhotoAttachment = (event) => {
-    const file = event.target.files[0];
-    if (file) {
-      if (file.type.startsWith('image/')) {
-        const fileObj = {
-          name: file.name,
-          type: file.type,
-          size: file.size,
-          file: file,
-          url: URL.createObjectURL(file)
-        };
-        setAttachedFile(fileObj);
-        setMessage('');
-      } else {
-        alert('Please select an image file');
-      }
-      event.target.value = '';
-    }
-    setShowAttachMenu(false);
-  };
-
+  // REFINED HANDLER: Send/Update Message Logic (CRITICAL INTEGRATION POINT)
   const handleSendMessage = async () => {
     if ((message.trim() || attachedFile) && !isBotTyping) {
       let messageText = message;
@@ -908,6 +1222,7 @@ Generated on: ${new Date().toLocaleString()}
       setAttachedFile(null);
       
       if (isEditing) {
+        // --- EDIT/UPDATE LOGIC ---
         setCurrentChat(prevChat => prevChat.map(msg => 
           msg.id === editMessageId ? { ...msg, text: messageText } : msg
         ));
@@ -916,18 +1231,9 @@ Generated on: ${new Date().toLocaleString()}
         return;
       }
 
-      // If a feature is selected, process it through the API
-      if (selectedFeature && (messageText.trim() || fileData)) {
-        // Check if this is a follow-up question (bot already responded with this feature)
-        const lastBotMsg = [...currentChat].reverse().find(msg => msg.sender === 'bot' && msg.featureKey === selectedFeature);
-        
-        if (lastBotMsg && messageText.trim() && !fileData) {
-          // This is a follow-up question - use the followup endpoint
-          await handleFollowupQuestion(messageText);
-        } else {
-          // This is a new feature request - use the main endpoint
-          await handleFeatureAPICall(selectedFeature, messageText);
-        }
+      // If a feature is selected, use the API call (for file attachments OR follow-up questions)
+      if (selectedFeature) {
+        await handleFeatureAPICall(selectedFeature, messageText);
         return;
       }
 
@@ -969,25 +1275,58 @@ Generated on: ${new Date().toLocaleString()}
       
       setCurrentChat(prev => [...prev, newMessage, initialBotMessage]);
 
+      // -------------------------------------------------
+      // *** YOUR FASTAPI INTEGRATION POINT ***
+      // -------------------------------------------------
+      
+      const userId = currentUser ? currentUser.id : 'anonymous'; // Ensure user ID is sent
+      const payload = {
+          user_id: userId,
+          chatId: newChatId, 
+          query: messageText,
+          file_metadata: fileData ? { name: fileData.name, url: fileData.url, type: fileData.type } : null,
+          // SCENARIO 1 & 2 CONTEXT: Send the ENTIRE current conversation array 
+          // (including the user's new message and placeholder) to the backend for RAG context.
+          analysis_context: [...currentChat, newMessage, initialBotMessage], 
+      };
+      
+      console.log("Payload ready for FastAPI for AUTO-SAVING:", payload);
+      
+      // REPLACE THIS SIMULATION BLOCK WITH YOUR ACTUAL FETCH CALL:
+      /*
+      fetch('YOUR_FASTAPI_ENDPOINT/api/chat/respond', { 
+          method: 'POST', 
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+      }).then(res => res.json()).then(data => {
+          // 1. Update chat with final BOT_RESPONSE
+          // 2. FastAPI/Python MUST handle saving the updated chat history to MongoDB here.
+      }).catch(error => console.error("API Error", error));
+      */
+      // -------------------------------------------------
+
+
+      // Final response simulation delay (Current Mock Logic)
       setTimeout(() => {
+        // Update the chat, replacing the typing indicator with the welcome message
         setCurrentChat(prevChat => {
           const lastMessageIndex = prevChat.findIndex(msg => msg.id === botPlaceholderId);
           
           if (lastMessageIndex !== -1) {
             const updatedLastMessage = {
                 ...prevChat[lastMessageIndex],
-                text: '',
-                isWelcomeMessage: true,
+                text: '', // Empty text, the UI will render the welcome component
+                isWelcomeMessage: true, // Special flag to render welcome UI
                 isTyping: false,
-                timestamp: Date.now(),
+                timestamp: Date.now(), // Set final timestamp
             };
             return [...prevChat.slice(0, lastMessageIndex), updatedLastMessage];
           }
           return prevChat;
         });
         
-        setIsBotTyping(false);
-      }, 2000);
+        setIsBotTyping(false); // END: Enable input
+      }, 2000); 
     }
   };
 
@@ -996,22 +1335,21 @@ Generated on: ${new Date().toLocaleString()}
     setCurrentChatId(null); 
     setShowSidebar(false); 
     setMessage('');
-    setSelectedFeature(null);
-    setAttachedFile(null);
-    StorageService.clearCurrentChatId();
+    StorageService.clearCurrentChatId(); // Clear stored chat ID
   };
   
   const deleteChat = (chatId, e) => { 
     e.stopPropagation(); 
     
+    // Delete from storage
     StorageService.deleteChat(chatId);
     
+    // Update state
     setChatHistory(chatHistory.filter(chat => chat.id !== chatId)); 
     
     if (currentChatId === chatId) { 
       setCurrentChat([]); 
       setCurrentChatId(null); 
-      setSelectedFeature(null);
       StorageService.clearCurrentChatId();
     } 
   };
@@ -1020,26 +1358,13 @@ Generated on: ${new Date().toLocaleString()}
     setCurrentChat(chat.messages || []); 
     setCurrentChatId(chat.id); 
     setShowSidebar(false);
-    
-    const lastBotMessage = [...(chat.messages || [])].reverse().find(msg => msg.sender === 'bot' && msg.featureKey);
-    if (lastBotMessage) {
-      setSelectedFeature(lastBotMessage.featureKey);
-    }
-    
-    StorageService.setCurrentChatId(chat.id);
+    StorageService.setCurrentChatId(chat.id); // Save as current chat
   };
-
-  const handleKeyPress = (e) => { 
-    if (e.key === 'Enter' && !e.shiftKey) { 
-      e.preventDefault(); 
-      handleSendMessage(); 
-    } 
-  };
+  const handleKeyPress = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } };
   
-  const generateShareLink = () => { 
-    return `${window.location.origin}/shared/${currentChatId || 'new-chat-id'}`;
-  };
+  const generateShareLink = () => { return `${window.location.origin}/shared/${currentChatId || 'new-chat-id'}`; }; // Use currentChatId for better link logic
   
+  // FIX: Updated copyShareLink to use document.execCommand('copy') for better iframe compatibility
   const copyShareLink = () => { 
     const link = generateShareLink();
     
@@ -1064,6 +1389,9 @@ Generated on: ${new Date().toLocaleString()}
     }
   };
 
+  // ------------------------------------------------
+  // LOGIN/SIGNUP UI (Retained, but using Poppins font)
+  // ------------------------------------------------
   if (!isLoggedIn) {
     return (
       <div style={{
@@ -1084,6 +1412,7 @@ Generated on: ${new Date().toLocaleString()}
           padding: '48px 40px',
           position: 'relative'
         }}>
+          {/* Back to Home Button */}
           <button
             onClick={() => window.location.href = '/'}
             style={{
@@ -1118,8 +1447,8 @@ Generated on: ${new Date().toLocaleString()}
           </button>
           <div style={{ textAlign: 'center', marginBottom: '32px' }}>
             <div style={{
-              width: '180px',
-              height: '45px',
+              width: '180px',  // Further reduced width
+              height: '45px',  // Further reduced height proportionally
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -1131,8 +1460,8 @@ Generated on: ${new Date().toLocaleString()}
                 src="/VerdictX5.png"
                 alt="VerdictX Logo"
                 style={{
-                  width: '180px',
-                  height: '45px',
+                  width: '180px', // Further reduced width
+                  height: '45px',  // Further reduced height
                   objectFit: 'contain',
                   position: 'absolute',
                   left: '50%',
@@ -1154,7 +1483,7 @@ Generated on: ${new Date().toLocaleString()}
           </div>
 
           {!showSignup ? (
-            <form onSubmit={(e) => { e.preventDefault(); setLoginError('Invalid credentials'); }}>
+            <form onSubmit={handleLogin}>
               <div style={{ marginBottom: '20px' }}>
                 <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px', fontFamily: 'Alata, sans-serif' }}>Email Address</label>
                 <input type="email" value={loginForm.email} onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })} required style={{ width: '100%', padding: '12px 16px', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '14px', outline: 'none', transition: 'border-color 0.2s', boxSizing: 'border-box', fontFamily: 'Alata, sans-serif' }} onFocus={(e) => e.target.style.borderColor = '#3b82f6'} onBlur={(e) => e.target.style.borderColor = '#d1d5db'} placeholder="your@email.com" />
@@ -1190,9 +1519,11 @@ Generated on: ${new Date().toLocaleString()}
                         picture: decoded.picture
                       };
                       
+                      // First save to storage
                       const stored = StorageService.setUser(userData);
                       
                       if (stored) {
+                        // Then update state
                         setCurrentUser(userData);
                         setIsLoggedIn(true);
                         setLoginError('');
@@ -1217,6 +1548,7 @@ Generated on: ${new Date().toLocaleString()}
                 />
               </div>
 
+
               <div style={{ marginTop: '24px', textAlign: 'center' }}>
                 <p style={{ fontSize: '14px', color: '#6b7280', margin: 0, fontFamily: 'Alata, sans-serif' }}>
                   Don't have an account?{' '}
@@ -1226,7 +1558,7 @@ Generated on: ${new Date().toLocaleString()}
 
             </form>
           ) : (
-            <form onSubmit={(e) => { e.preventDefault(); setSignupError('Signup not implemented'); }}>
+            <form onSubmit={handleSignup}>
               <div style={{ marginBottom: '20px' }}>
                 <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>Full Name</label>
                 <input type="text" value={signupForm.name} onChange={(e) => setSignupForm({ ...signupForm, name: e.target.value })} required style={{ width: '100%', padding: '12px 16px', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '14px', outline: 'none', transition: 'border-color 0.2s', boxSizing: 'border-box' }} onFocus={(e) => e.target.style.borderColor = '#3b82f6'} onBlur={(e) => e.target.style.borderColor = '#d1d5db'} placeholder="John Doe" />
@@ -1263,43 +1595,7 @@ Generated on: ${new Date().toLocaleString()}
                 <div style={{ flex: 1, height: '1px', backgroundColor: '#e5e7eb' }}></div>
               </div>
               
-              <div style={{ display: 'flex', justifyContent: 'center' }}>
-                <GoogleLogin
-                  onSuccess={(credentialResponse) => {
-                    try {
-                      const decoded = jwtDecode(credentialResponse.credential);
-                      const userData = {
-                        id: decoded.sub,
-                        name: decoded.name,
-                        email: decoded.email,
-                        picture: decoded.picture
-                      };
-                      
-                      const stored = StorageService.setUser(userData);
-                      
-                      if (stored) {
-                        setCurrentUser(userData);
-                        setIsLoggedIn(true);
-                        setSignupError('');
-                      } else {
-                        setSignupError('Failed to save user data. Please try again.');
-                      }
-                    } catch (error) {
-                      console.error('Google signup error:', error);
-                      setSignupError('Failed to process signup. Please try again.');
-                    }
-                  }}
-                  onError={() => {
-                    setSignupError('Google Sign Up was unsuccessful. Please try again later.');
-                  }}
-                  theme="filled_blue"
-                  shape="rectangular"
-                  size="large"
-                  type="standard"
-                  text="signup_with"
-                  width="280px"
-                />
-              </div>
+              <GoogleSignInButton setCurrentUser={setCurrentUser} setIsLoggedIn={setIsLoggedIn} setLoginError={setSignupError} />
               
               <div style={{ marginTop: '24px', textAlign: 'center' }}>
                 <p style={{ fontSize: '14px', color: '#6b7280', margin: 0 }}>
@@ -1314,21 +1610,25 @@ Generated on: ${new Date().toLocaleString()}
     );
   }
 
+  // ------------------------------------------------
+  // MAIN CHAT UI
+  // ------------------------------------------------
   return (
     <div style={{ 
         display: 'flex', 
         height: '100vh', 
         width: '100vw', 
         overflow: 'hidden', 
-        backgroundColor: colors.bgApp,
+        backgroundColor: colors.bgApp, // Dynamic Background
         fontFamily: 'Poppins, sans-serif'
       }}>
       
+      {/* Sidebar (Chat History) */}
       {showSidebar && (
         <div style={{
           width: '280px',
-          backgroundColor: colors.bgPrimary,
-          borderRight: `1px solid ${colors.border}`,
+          backgroundColor: colors.bgPrimary, // Dynamic Background
+          borderRight: `1px solid ${colors.border}`, // Dynamic Border
           display: 'flex',
           flexDirection: 'column',
           color: colors.textPrimary,
@@ -1349,6 +1649,7 @@ Generated on: ${new Date().toLocaleString()}
             </button>
           </div>
           
+          {/* NEW: Search Bar */}
           <div style={{ padding: '12px' }}>
             <input 
                 type="text" 
@@ -1397,6 +1698,7 @@ Generated on: ${new Date().toLocaleString()}
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto' }}>
+            {/* Using filteredChatHistory */}
             {filteredChatHistory.map((chat) => (
               <div
                 key={chat.id}
@@ -1443,15 +1745,17 @@ Generated on: ${new Date().toLocaleString()}
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         
+        {/* Header (Navbar) - REDUCED SIZE */}
         <div style={{
-          height: '64px',
-          backgroundColor: colors.bgApp,
-          borderBottom: `1px solid ${colors.border}`,
+          height: '64px', // Reduced height
+          backgroundColor: colors.bgApp, // Dynamic Background
+          borderBottom: `1px solid ${colors.border}`, // Dynamic Border
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '8px 24px'
         }}
+        // Added class for print CSS targeting
         className="header-content" 
         >
 
@@ -1468,7 +1772,7 @@ Generated on: ${new Date().toLocaleString()}
             <img 
               src={DEFAULT_AVATAR_URL}
               alt="VerdictX Logo" 
-              className="logo-print"
+              className="logo-print" // Added class for print CSS targeting
               style={{ 
                 width: '120px', 
                 height: '50px', 
@@ -1481,6 +1785,7 @@ Generated on: ${new Date().toLocaleString()}
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }} className="header-controls" data-print-hide="true">
+            {/* Dark Mode Toggle */}
             <div data-print-hide="true" className="print-hidden">
               <button
                   onClick={() => setIsDarkMode(!isDarkMode)}
@@ -1499,6 +1804,7 @@ Generated on: ${new Date().toLocaleString()}
               </button>
             </div>
 
+            {/* Share Button with PDF Export */}
             {currentChat.length > 0 && (
               <div className="no-print" data-print-hide="true">
                 <div style={{ position: 'relative', '@media print': { display: 'none' } }}>
@@ -1519,6 +1825,7 @@ Generated on: ${new Date().toLocaleString()}
                     onClick={(e) => e.stopPropagation()}
                     style={{ position: 'absolute', top: '48px', right: 0, backgroundColor: colors.bgApp, border: `1px solid ${colors.border}`, borderRadius: '12px', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', padding: '8px 0', width: '280px', zIndex: 50, color: colors.textPrimary }}
                   >
+                    {/* NEW: Export to PDF Button */}
                     <button
                         data-print-hide="true"
                         onClick={handleExportPdf}
@@ -1530,6 +1837,7 @@ Generated on: ${new Date().toLocaleString()}
                       <span style={{ fontSize: '14px', fontWeight: '500', fontFamily: 'Alata, sans-serif' }}>Export as PDF</span>
                     </button>
                     
+                    {/* UPDATED: Copy Share Link Button */}
                     <button
                         data-print-hide="true"
                         onClick={copyShareLink}
@@ -1557,6 +1865,7 @@ Generated on: ${new Date().toLocaleString()}
               </div>
             )}
 
+            {/* User Profile/Menu */}
             <div
               style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '8px 12px', borderRadius: '8px' }}
               onClick={(e) => { e.stopPropagation(); setShowUserMenu(!showUserMenu); setShowShareMenu(false); }}
@@ -1564,6 +1873,7 @@ Generated on: ${new Date().toLocaleString()}
               onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
               data-print-hide="true"
             >
+              {/* Generic User Avatar */}
               <div style={{ width: '36px', height: '36px', backgroundColor: '#3b82f6', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <User size={20} color="white" />
               </div>
@@ -1600,48 +1910,58 @@ Generated on: ${new Date().toLocaleString()}
           </div>
         </div>
 
+        {/* Chat Display Area - AUTO-SCROLLING and PLACEHOLDER HANDLING */}
         <div 
-            ref={chatContainerRef}
+            ref={chatContainerRef} // Ref attached for scrolling
             style={{
                 flex: 1,
-                overflowY: 'auto',
+                overflowY: 'auto', // Enables scrolling
                 padding: '24px 16px',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
+                // Pushes content to the bottom if the chat is empty
                 justifyContent: currentChat.length === 0 ? 'flex-end' : 'flex-start',
                 backgroundColor: colors.bgApp,
             }}
         >
           <div style={{ width: '100%', maxWidth: '896px' }}>
             {currentChat.length === 0 ? (
+              // Empty State - Simple Placeholder
               <div style={{ textAlign: 'center', width: '100%', marginBottom: '16px' }}> 
                 <p style={{ color: colors.textSecondary, fontSize: '20px', margin: 0, fontFamily: 'Alata, sans-serif' }}>Start a new conversation</p>
                 <p style={{ color: colors.textSecondary, fontSize: '14px', marginTop: '8px', fontFamily: 'Alata, sans-serif' }}>Send a message to begin</p>
               </div>
             ) : (
+              // Individual Message Rendering
               <>
                 {currentChat.map((msg, index) => (
                   <div
                     key={msg.id || index}
+                    // Outer wrapper for the message row (bubble + actions + reactions)
                     style={{
                       display: 'flex',
+                      // Align the whole row (bubble + actions) right/left
                       justifyContent: msg.sender === 'user' ? 'flex-end' : 'flex-start', 
-                      marginBottom: '24px',
+                      marginBottom: '24px', // Increased margin to accommodate reactions below the bubble
                       width: '100%',
                       maxWidth: '896px',
                       position: 'relative',
                     }}
+                    // Enable hover state tracking on the whole row
                     onMouseEnter={() => setHoveredMessageId(msg.id)}
                     onMouseLeave={() => setHoveredMessageId(null)}
                   >
                     
+                    {/* ---------------------------------------------------- */}
+                    {/* LEFT ACTIONS (Bot Copy Icon) or User Copy/Edit/Delete */}
+                    {/* ---------------------------------------------------- */}
                     {msg.sender === 'bot' && !msg.isTyping && (
                        <div 
                         style={{
                           display: 'flex',
                           alignItems: 'center',
-                          minWidth: '40px',
+                          minWidth: '40px', // Reserve space for buttons
                           opacity: hoveredMessageId === msg.id ? 1 : 0,
                           transition: 'opacity 0.2s',
                           marginRight: '8px', 
@@ -1649,6 +1969,7 @@ Generated on: ${new Date().toLocaleString()}
                         }}
                         data-print-hide="true"
                       >
+                         {/* Copy Icon (LEFT SIDE OF BOT BUBBLE) */}
                         <button
                             onClick={(e) => { 
                                 e.stopPropagation(); 
@@ -1673,10 +1994,13 @@ Generated on: ${new Date().toLocaleString()}
                       </div>
                     )}
                     
+                    {/* ---------------------------------------------------- */}
+                    {/* MESSAGE BUBBLE & INNER CONTENT */}
+                    {/* ---------------------------------------------------- */}
                     <div className="message-bubble" style={{ 
                         display: 'flex', 
                         flexDirection: 'column', 
-                        maxWidth: '800px', 
+                        maxWidth: '700px', 
                         order: 2,
                         alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start',
                         minWidth: msg.file ? '300px' : 'auto'
@@ -1689,7 +2013,7 @@ Generated on: ${new Date().toLocaleString()}
                                 color: msg.sender === 'user' ? 'white' : colors.textPrimary,
                                 fontFamily: 'Alata, sans-serif',
                                 boxShadow: isEditing && msg.id === editMessageId ? '0 0 0 2px #ff8a00' : 'none',
-                                position: 'relative',
+                                position: 'relative', // Anchor for reactions
                                 cursor: msg.sender === 'user' && !msg.isTyping ? 'default' : 'default',
                                 width: '100%'
                             }}
@@ -1701,6 +2025,7 @@ Generated on: ${new Date().toLocaleString()}
                                         <TypingIndicator isDarkMode={isDarkMode} />
                                     </div>
                                 ) : msg.isWelcomeMessage ? (
+                                    // Welcome Message with Feature Buttons (VERTICAL LIST)
                                     <div style={{ width: '100%', padding: '0' }}>
                                         <div style={{ marginBottom: '16px' }}>
                                             <p style={{ margin: '0 0 8px 0', fontSize: '16px', fontWeight: 'bold', color: msg.sender === 'user' ? '#fff' : colors.textPrimary }}>
@@ -1708,19 +2033,26 @@ Generated on: ${new Date().toLocaleString()}
                                             </p>
                                         </div>
 
+                                        {/* Feature Buttons in Vertical List */}
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                            {Object.keys(FEATURE_CONFIG).map((key) => (
+                                            {[
+                                                { key: 'judgment_prediction', name: '⚖️ Judgment Prediction' },
+                                                { key: 'bail_analysis', name: '🔓 Bail Analysis' },
+                                                { key: 'case_summarization', name: '📋 Case Summarization' },
+                                                { key: 'verdictx_qai', name: '🤖 VerdictX QAI' },
+                                                { key: 'information_extraction', name: '📄 Information Extraction & Drafting' }
+                                            ].map((feature) => (
                                                 <button
-                                                    key={key}
+                                                    key={feature.key}
                                                     onClick={() => {
-                                                        setSelectedFeature(key);
+                                                        setSelectedFeature(feature.key);
                                                     }}
                                                     style={{
                                                         padding: '12px 16px',
                                                         borderRadius: '6px',
                                                         border: `2px solid ${colors.chatBubbleUser}`,
-                                                        backgroundColor: selectedFeature === key ? colors.chatBubbleUser : 'transparent',
-                                                        color: selectedFeature === key ? 'white' : colors.chatBubbleUser,
+                                                        backgroundColor: selectedFeature === feature.key ? colors.chatBubbleUser : 'transparent',
+                                                        color: selectedFeature === feature.key ? 'white' : colors.chatBubbleUser,
                                                         fontFamily: 'Alata, sans-serif',
                                                         fontSize: '14px',
                                                         fontWeight: '500',
@@ -1734,19 +2066,20 @@ Generated on: ${new Date().toLocaleString()}
                                                         e.currentTarget.style.color = 'white';
                                                     }}
                                                     onMouseLeave={(e) => {
-                                                        if (selectedFeature !== key) {
+                                                        if (selectedFeature !== feature.key) {
                                                             e.currentTarget.style.backgroundColor = 'transparent';
                                                             e.currentTarget.style.color = colors.chatBubbleUser;
                                                         }
                                                     }}
                                                 >
-                                                    {FEATURE_CONFIG[key].icon} {FEATURE_CONFIG[key].name}
+                                                    {feature.name}
                                                 </button>
                                             ))}
                                         </div>
                                     </div>
                                 ) : (
                                     <>
+                                        {/* Display file/image first if present */}
                                         {msg.file && (
                                             <div 
                                                 style={{
@@ -1759,6 +2092,7 @@ Generated on: ${new Date().toLocaleString()}
                                                 }}
                                             >
                                                 {msg.file.type.startsWith('image/') ? (
+                                                    // Image preview with download button
                                                     <div>
                                                         <img 
                                                             src={msg.file.url} 
@@ -1797,9 +2131,30 @@ Generated on: ${new Date().toLocaleString()}
                                                                     </div>
                                                                 </div>
                                                             </div>
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.preventDefault();
+                                                                    e.stopPropagation();
+                                                                    handleFileDownload(msg.file);
+                                                                }}
+                                                                style={{
+                                                                    background: 'none',
+                                                                    border: 'none',
+                                                                    padding: '8px',
+                                                                    cursor: 'pointer',
+                                                                    opacity: 0.8,
+                                                                    transition: 'opacity 0.2s'
+                                                                }}
+                                                                title="Download file"
+                                                                onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
+                                                                onMouseLeave={(e) => e.currentTarget.style.opacity = 0.8}
+                                                            >
+                                                                <FileDown size={20} color={msg.sender === 'user' ? '#fff' : colors.textPrimary} />
+                                                            </button>
                                                         </div>
                                                     </div>
                                                 ) : (
+                                                    // File preview with download button
                                                     <div style={{
                                                         padding: '12px',
                                                         display: 'flex',
@@ -1834,11 +2189,32 @@ Generated on: ${new Date().toLocaleString()}
                                                                 </div>
                                                             </div>
                                                         </div>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.preventDefault();
+                                                                e.stopPropagation();
+                                                                handleFileDownload(msg.file);
+                                                            }}
+                                                            style={{
+                                                                background: 'none',
+                                                                border: 'none',
+                                                                padding: '8px',
+                                                                cursor: 'pointer',
+                                                                opacity: 0.8,
+                                                                transition: 'opacity 0.2s'
+                                                            }}
+                                                            title="Download file"
+                                                            onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
+                                                            onMouseLeave={(e) => e.currentTarget.style.opacity = 0.8}
+                                                        >
+                                                            <FileDown size={20} color={msg.sender === 'user' ? '#fff' : colors.textPrimary} />
+                                                        </button>
                                                     </div>
                                                 )}
                                             </div>
                                         )}
 
+                                        {/* Display text content below the file */}
                                         {msg.text && (
                                             <div style={{ 
                                                 margin: 0,
@@ -1846,8 +2222,8 @@ Generated on: ${new Date().toLocaleString()}
                                                 lineHeight: '1.5',
                                                 color: msg.sender === 'user' ? '#fff' : colors.textPrimary,
                                                 textAlign: msg.sender === 'user' ? 'right' : 'left',
-                                                whiteSpace: 'pre-wrap',
-                                                fontFamily: 'monospace'
+                                                paddingRight: msg.sender === 'user' ? '4px' : '0',
+                                                paddingLeft: msg.sender === 'user' ? '0' : '4px'
                                             }}>
                                                 {msg.text}
                                             </div>
@@ -1855,20 +2231,6 @@ Generated on: ${new Date().toLocaleString()}
                                     </>
                                 )}
                             </div>
-
-                            {msg.isWelcomeMessage && selectedFeature && (
-                              <div style={{
-                                marginTop: '12px',
-                                padding: '8px 12px',
-                                backgroundColor: colors.bgPrimary,
-                                borderRadius: '8px',
-                                display: 'inline-block'
-                              }}>
-                                <p style={{ color: colors.textPrimary, fontSize: '13px', fontFamily: 'Alata, sans-serif', margin: 0 }}>
-                                  ✓ {FEATURE_CONFIG[selectedFeature]?.name} selected
-                                </p>
-                              </div>
-                            )}
 
                             <p style={{
                                 fontSize: '12px',
@@ -1881,6 +2243,7 @@ Generated on: ${new Date().toLocaleString()}
                                 {msg.time}
                             </p>
                             
+                            {/* NEW: Reaction Button for User and Bot message (BOTTOM RIGHT OF BUBBLE) */}
                             {!msg.isTyping && (
                                 <div style={{ 
                                     position: 'absolute', 
@@ -1910,7 +2273,8 @@ Generated on: ${new Date().toLocaleString()}
                                 </div>
                             )}
 
-                             {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                             {/* Reactions Display (BELOW THE BUBBLE, ALIGNED TO ITS CORNER) */}
+                            {msg.reactions && Object.keys(msg.reactions).length > 0 && (
                                 <div 
                                     style={{
                                         display: 'flex', 
@@ -1922,6 +2286,7 @@ Generated on: ${new Date().toLocaleString()}
                                         position: 'absolute',
                                         bottom: '-12px', 
                                         zIndex: 5,
+                                        // Align to the specific corner of the bubble
                                         right: msg.sender === 'user' ? '0' : 'auto', 
                                         left: msg.sender === 'bot' ? '0' : 'auto', 
                                     }}
@@ -1936,12 +2301,14 @@ Generated on: ${new Date().toLocaleString()}
                             )}
                         </div>
                         
+                        {/* Reaction Picker Panel - FLOATING (Aligned relative to the message bubble) */}
                         {reactionPickerId === msg.id && (
                             <div 
                               onClick={(e) => e.stopPropagation()}
                               style={{
                                 position: 'absolute',
-                                bottom: '56px',
+                                bottom: '56px', // Position above the bubble
+                                // Align panel corner relative to bubble (shifted for visual balance)
                                 right: msg.sender === 'user' ? '0' : 'auto',
                                 left: msg.sender === 'bot' ? '0' : 'auto',
                                 backgroundColor: colors.bgPrimary,
@@ -1964,13 +2331,16 @@ Generated on: ${new Date().toLocaleString()}
                             </div>
                           )}
                     </div>
+                    {/* ---------------------------------------------------- */}
 
+
+                    {/* RIGHT ACTIONS (User actions) */}
                     {msg.sender === 'user' && !msg.isTyping && (
                       <div 
                         style={{
                           display: 'flex',
                           alignItems: 'center', 
-                          minWidth: '40px',
+                          minWidth: '40px', // Reserve space for buttons
                           opacity: hoveredMessageId === msg.id ? 1 : 0,
                           transition: 'opacity 0.2s',
                           marginLeft: '8px', 
@@ -1978,7 +2348,8 @@ Generated on: ${new Date().toLocaleString()}
                         }}
                         data-print-hide="true"
                       >
-                        <div style={{ display: 'flex', marginBottom: '0px' }}>
+                        {/* Edit, Delete, and Copy Buttons (USER SIDE - NEXT TO BUBBLE) */}
+                        <div style={{ display: 'flex', marginBottom: '0px' }}> {/* Removed marginBottom to tighten group */}
                           <button
                             onClick={(e) => { e.stopPropagation(); startEditMessage(msg); }}
                             title="Edit message"
@@ -2015,6 +2386,25 @@ Generated on: ${new Date().toLocaleString()}
                               <Copy size={16} color={colors.textSecondary} />
                           </button>
                         </div>
+
+                        {/* Reaction Button - User side (BOTTOM RIGHT CORNER OF BUBBLE - ALIGNED WITH IT) */}
+                         <div style={{ position: 'absolute', right: '12px', bottom: '12px', zIndex: 10, opacity: 0 }}>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); setReactionPickerId(reactionPickerId === msg.id ? null : msg.id); }}
+                                title="React"
+                                style={{ 
+                                  background: colors.bgPrimary, 
+                                  border: `1px solid ${colors.border}`, 
+                                  borderRadius: '50%', 
+                                  padding: '4px', 
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                                }}
+                              >
+                                <Smile size={14} color={colors.textSecondary} />
+                            </button>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -2024,10 +2414,11 @@ Generated on: ${new Date().toLocaleString()}
           </div>
         </div>
 
+        {/* Chat Input Bar */}
         <div style={{
           padding: '24px',
-          backgroundColor: colors.bgApp,
-          borderTop: `1px solid ${colors.border}`,
+          backgroundColor: colors.bgApp, // Dynamic Background
+          borderTop: `1px solid ${colors.border}`, // Dynamic Border
           display: 'flex',
           justifyContent: 'center'
         }}
@@ -2035,25 +2426,88 @@ Generated on: ${new Date().toLocaleString()}
         >
           <div style={{ width: '100%', maxWidth: '896px' }}>
             
+            {/* File Preview Display */}
+            {attachedFile && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                backgroundColor: colors.border,
+                border: `1px solid ${colors.inputBorder}`,
+                borderRadius: '8px',
+                padding: '12px 16px',
+                marginBottom: '12px',
+                gap: '12px',
+                maxWidth: '320px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', flex: 1 }}>
+                  <FileText size={20} color={colors.textPrimary} style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ 
+                      fontSize: '14px', 
+                      fontWeight: '600',
+                      color: colors.textPrimary,
+                      wordBreak: 'break-word',
+                      overflow: 'hidden',
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical',
+                      lineHeight: '1.4'
+                    }}>
+                      {attachedFile.name}
+                    </div>
+                    <div style={{ 
+                      fontSize: '12px', 
+                      color: colors.textSecondary,
+                      marginTop: '4px'
+                    }}>
+                      {(attachedFile.size / 1024).toFixed(2)} KB
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setAttachedFile(null)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '4px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: '4px',
+                    flexShrink: 0
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = colors.inputBorder}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                  title="Remove attachment"
+                >
+                  <X size={18} color={colors.textSecondary} />
+                </button>
+              </div>
+            )}
+            
             <div style={{
               display: 'flex',
               alignItems: 'center',
               gap: '12px',
-              backgroundColor: colors.inputBg,
+              backgroundColor: colors.inputBg, // Dynamic Background
+              // Visual cue when disabled/typing
               border: `2px solid ${isBotTyping ? '#9ca3af' : colors.inputBorder}`, 
               borderRadius: '9999px',
               padding: '8px',
               boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
             }}>
               
+              {/* Attachment Button */}
               <div style={{ position: 'relative' }}>
                 <button
                   onClick={() => { setShowAttachMenu(!showAttachMenu); setShowEmojiPicker(false); }}
-                  disabled={isBotTyping || isEditing}
+                  disabled={isBotTyping || isEditing} // Disable attachment while typing/editing
                   style={{
                     width: '40px',
                     height: '40px',
-                    backgroundColor: isBotTyping || isEditing ? colors.border : colors.bgPrimary,
+                    backgroundColor: isBotTyping || isEditing ? colors.border : colors.bgPrimary, // Dynamic Background
                     border: 'none',
                     borderRadius: '50%',
                     display: 'flex',
@@ -2067,6 +2521,7 @@ Generated on: ${new Date().toLocaleString()}
                   <Plus size={20} color={isBotTyping || isEditing ? colors.textSecondary : colors.textPrimary} />
                 </button>
 
+                {/* Attachment Menu */}
                 {showAttachMenu && (
                   <div
                     style={{
@@ -2082,6 +2537,7 @@ Generated on: ${new Date().toLocaleString()}
                       width: '160px'
                     }}
                   >
+                    {/* Attach Files */}
                     <button
                       onClick={() => fileInputRef.current.click()}
                       style={{
@@ -2105,6 +2561,7 @@ Generated on: ${new Date().toLocaleString()}
                       Attach Files
                     </button>
 
+                    {/* Attach Photos */}
                     <button
                       onClick={() => photoInputRef.current.click()}
                       style={{
@@ -2129,12 +2586,12 @@ Generated on: ${new Date().toLocaleString()}
                   </div>
                 )}
 
+                {/* Hidden file inputs */}
                 <input
                   type="file"
                   ref={fileInputRef}
                   onChange={handleFileAttachment}
                   style={{ display: 'none' }}
-                  accept=".pdf,.PDF"
                 />
                 <input
                   type="file"
@@ -2144,36 +2601,8 @@ Generated on: ${new Date().toLocaleString()}
                   style={{ display: 'none' }}
                 />
               </div>
-
-              {selectedFeature && (
-                <button
-                  onClick={() => {
-                    setSelectedFeature(null);
-                    setAttachedFile(null);
-                  }}
-                  title="Clear selected feature"
-                  style={{
-                    padding: '6px 12px',
-                    backgroundColor: '#3b82f6',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '20px',
-                    fontSize: '12px',
-                    fontFamily: 'Alata, sans-serif',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    transition: 'background-color 0.2s'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2563eb'}
-                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#3b82f6'}
-                >
-                  <X size={14} />
-                  {FEATURE_CONFIG[selectedFeature]?.name}
-                </button>
-              )}
               
+              {/* NEW: Emoji Picker Toggle and Panel (for composition) */}
               <div style={{ position: 'relative' }}>
                 <button
                     onClick={(e) => { e.stopPropagation(); setShowEmojiPicker(!showEmojiPicker); setShowAttachMenu(false); }}
@@ -2222,23 +2651,15 @@ Generated on: ${new Date().toLocaleString()}
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder={
-                  isEditing 
-                    ? "Editing message..." 
-                    : isBotTyping 
-                    ? "AI is generating response..." 
-                    : selectedFeature
-                    ? `Type Your message here...`
-                    : "Type your message here..."
-                }
-                disabled={isBotTyping}
+                placeholder={isEditing ? "Editing message..." : isBotTyping ? "AI is generating response..." : "Type your message here..."}
+                disabled={isBotTyping} // Disable input while typing
                 style={{
                   flex: 1,
                   outline: 'none',
                   border: 'none',
                   padding: '8px 16px',
                   fontSize: '16px',
-                  color: colors.textPrimary,
+                  color: colors.textPrimary, // Dynamic Text Color
                   backgroundColor: 'transparent',
                   fontFamily: 'Alata, sans-serif',
                   cursor: isBotTyping ? 'not-allowed' : 'text'
@@ -2247,11 +2668,12 @@ Generated on: ${new Date().toLocaleString()}
 
               <button
                 onClick={handleSendMessage}
-                disabled={isBotTyping || (!message.trim() && !attachedFile)}
+                disabled={isBotTyping || (!message.trim() && !attachedFile)} // Disable send button if typing or both input and file are empty
                 title={isEditing ? "Update Message" : "Send Message"}
                 style={{
                   width: '40px',
                   height: '40px',
+                  // Gray out color when disabled
                   backgroundColor: isBotTyping || (!message.trim() && !attachedFile) ? colors.textSecondary : isEditing ? '#ff8a00' : '#3b82f6',
                   border: 'none',
                   borderRadius: '50%',
@@ -2279,13 +2701,13 @@ function App() {
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/signin" element={<AppContent />} />
-        <Route path="/chat" element={<AppContent />} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </div>
   );
 }
 
+// Export the main App component wrapped with providers
 export default function AppWrapper() {
   return (
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
@@ -2294,4 +2716,4 @@ export default function AppWrapper() {
       </Router>
     </GoogleOAuthProvider>
   );
-} 
+}
