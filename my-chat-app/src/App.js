@@ -1226,7 +1226,47 @@ Generated on: ${new Date().toLocaleString()}
 
             </form>
           ) : (
-            <form onSubmit={(e) => { e.preventDefault(); setSignupError('Signup not implemented'); }}>
+            <form onSubmit={(e) => { 
+              e.preventDefault();
+              
+              // Validate form inputs
+              if (!signupForm.name.trim()) {
+                setSignupError('Please enter your full name');
+                return;
+              }
+              if (!signupForm.email.trim()) {
+                setSignupError('Please enter your email address');
+                return;
+              }
+              if (signupForm.password.length < 6) {
+                setSignupError('Password must be at least 6 characters long');
+                return;
+              }
+              if (signupForm.password !== signupForm.confirmPassword) {
+                setSignupError('Passwords do not match');
+                return;
+              }
+
+              // Create user object
+              const userData = {
+                id: Date.now().toString(),
+                name: signupForm.name,
+                email: signupForm.email,
+                picture: DEFAULT_AVATAR_URL
+              };
+
+              // Save user to storage
+              const stored = StorageService.setUser(userData);
+
+              if (stored) {
+                setCurrentUser(userData);
+                setIsLoggedIn(true);
+                setSignupError('');
+                setSignupForm({ name: '', email: '', password: '', confirmPassword: '' });
+              } else {
+                setSignupError('Failed to create account. Please try again.');
+              }
+            }}>
               <div style={{ marginBottom: '20px' }}>
                 <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>Full Name</label>
                 <input type="text" value={signupForm.name} onChange={(e) => setSignupForm({ ...signupForm, name: e.target.value })} required style={{ width: '100%', padding: '12px 16px', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '14px', outline: 'none', transition: 'border-color 0.2s', boxSizing: 'border-box' }} onFocus={(e) => e.target.style.borderColor = '#3b82f6'} onBlur={(e) => e.target.style.borderColor = '#d1d5db'} placeholder="John Doe" />
