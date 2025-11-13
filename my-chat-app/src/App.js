@@ -309,6 +309,10 @@ function AppContent() {
 
   const [attachedFile, setAttachedFile] = useState(null);
   const [selectedFeature, setSelectedFeature] = useState(null);
+  const [lockedFeatures, setLockedFeatures] = useState(() => {
+    const saved = localStorage.getItem('lockedFeatures');
+    return saved ? JSON.parse(saved) : {};
+  });
   const [isProcessingFile, setIsProcessingFile] = useState(false);
 
   const [currentChatId, setCurrentChatId] = useState(null);
@@ -319,7 +323,10 @@ function AppContent() {
   const [isEditing, setIsEditing] = useState(false);
   const [editMessageId, setEditMessageId] = useState(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const savedMode = localStorage.getItem('isDarkMode');
+    return savedMode ? JSON.parse(savedMode) : false;
+  });
   const [searchTerm, setSearchTerm] = useState('');
   const [hoveredMessageId, setHoveredMessageId] = useState(null);
   const [reactionPickerId, setReactionPickerId] = useState(null);
@@ -369,6 +376,16 @@ function AppContent() {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
   }, [currentChat]);
+
+  // Save theme preference to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('isDarkMode', JSON.stringify(isDarkMode));
+  }, [isDarkMode]);
+
+  // Save locked features to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('lockedFeatures', JSON.stringify(lockedFeatures));
+  }, [lockedFeatures]);
 
   const generateChatTitle = (messages) => {
     if (messages.length === 0) return 'New conversation';
@@ -997,6 +1014,7 @@ Generated on: ${new Date().toLocaleString()}
     setShowSidebar(false); 
     setMessage('');
     setSelectedFeature(null);
+    setLockedFeatures({});
     setAttachedFile(null);
     StorageService.clearCurrentChatId();
   };
@@ -1012,6 +1030,7 @@ Generated on: ${new Date().toLocaleString()}
       setCurrentChat([]); 
       setCurrentChatId(null); 
       setSelectedFeature(null);
+      setLockedFeatures({});
       StorageService.clearCurrentChatId();
     } 
   };
@@ -1021,9 +1040,17 @@ Generated on: ${new Date().toLocaleString()}
     setCurrentChatId(chat.id); 
     setShowSidebar(false);
     
-    const lastBotMessage = [...(chat.messages || [])].reverse().find(msg => msg.sender === 'bot' && msg.featureKey);
-    if (lastBotMessage) {
-      setSelectedFeature(lastBotMessage.featureKey);
+    // Restore locked feature for this chat if it exists
+    if (lockedFeatures[chat.id]) {
+      setSelectedFeature(lockedFeatures[chat.id]);
+    } else {
+      // Otherwise, find the last bot message with a feature
+      const lastBotMessage = [...(chat.messages || [])].reverse().find(msg => msg.sender === 'bot' && msg.featureKey);
+      if (lastBotMessage) {
+        setSelectedFeature(lastBotMessage.featureKey);
+      } else {
+        setSelectedFeature(null);
+      }
     }
     
     StorageService.setCurrentChatId(chat.id);
@@ -1666,7 +1693,8 @@ Generated on: ${new Date().toLocaleString()}
                     key={msg.id || index}
                     style={{
                       display: 'flex',
-                      justifyContent: msg.sender === 'user' ? 'flex-end' : 'flex-start', 
+                      flexDirection: 'column',
+                      alignItems: msg.sender === 'user' ? 'flex-end' : 'flex-start',
                       marginBottom: '24px',
                       width: '100%',
                       maxWidth: '896px',
@@ -1675,6 +1703,26 @@ Generated on: ${new Date().toLocaleString()}
                     onMouseEnter={() => setHoveredMessageId(msg.id)}
                     onMouseLeave={() => setHoveredMessageId(null)}
                   >
+                    <div style={{
+                      fontSize: '12px',
+                      fontFamily: 'Alata, sans-serif',
+                      fontWeight: '600',
+                      color: colors.textSecondary,
+                      marginBottom: '4px',
+                      paddingLeft: msg.sender === 'user' ? '0' : '8px',
+                      paddingRight: msg.sender === 'user' ? '8px' : '0',
+                    }}>
+                      {msg.sender === 'user' ? '👤 You' : '🤖 VerdictX'}
+                    </div>
+                    
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: msg.sender === 'user' ? 'flex-end' : 'flex-start',
+                        width: '100%',
+                        position: 'relative',
+                      }}
+                    >
                     
                     {msg.sender === 'bot' && !msg.isTyping && (
                        <div 
@@ -1734,16 +1782,16 @@ Generated on: ${new Date().toLocaleString()}
                                 width: '100%'
                             }}
                         >
-                            <div style={{ fontSize: '14px', margin: 0 }}>
+                            <div style={{ fontSize: '14px', margin: 0, fontFamily: 'Alata, sans-serif' }}>
                                 {msg.isTyping ? (
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'Alata, sans-serif' }}>
                                         <span>AI is thinking...</span>
                                         <TypingIndicator isDarkMode={isDarkMode} />
                                     </div>
                                 ) : msg.isWelcomeMessage ? (
                                     <div style={{ width: '100%', padding: '0' }}>
                                         <div style={{ marginBottom: '16px' }}>
-                                            <p style={{ margin: '0 0 8px 0', fontSize: '16px', fontWeight: 'bold', color: msg.sender === 'user' ? '#fff' : colors.textPrimary }}>
+                                            <p style={{ margin: '0 0 8px 0', fontSize: '16px', fontWeight: 'bold', color: msg.sender === 'user' ? '#fff' : colors.textPrimary, fontFamily: 'Alata, sans-serif' }}>
                                                 👋 Hi, I'm VerdictX — Your Legal AI Assistant
                                             </p>
                                         </div>
@@ -1754,6 +1802,10 @@ Generated on: ${new Date().toLocaleString()}
                                                     key={key}
                                                     onClick={() => {
                                                         setSelectedFeature(key);
+                                                        setLockedFeatures(prev => ({
+                                                            ...prev,
+                                                            [currentChatId || 'new']: key
+                                                        }));
                                                     }}
                                                     style={{
                                                         padding: '12px 16px',
@@ -1887,7 +1939,7 @@ Generated on: ${new Date().toLocaleString()}
                                                 color: msg.sender === 'user' ? '#fff' : colors.textPrimary,
                                                 textAlign: msg.sender === 'user' ? 'right' : 'left',
                                                 whiteSpace: 'pre-wrap',
-                                                fontFamily: 'monospace'
+                                                fontFamily: 'Alata, sans-serif'
                                             }}>
                                                 {msg.text}
                                             </div>
@@ -1905,8 +1957,23 @@ Generated on: ${new Date().toLocaleString()}
                                 display: 'inline-block'
                               }}>
                                 <p style={{ color: colors.textPrimary, fontSize: '13px', fontFamily: 'Alata, sans-serif', margin: 0 }}>
-                                  ✓ {FEATURE_CONFIG[selectedFeature]?.name} selected
+                                  🔒 {FEATURE_CONFIG[selectedFeature]?.name} locked
                                 </p>
+                              </div>
+                            )}
+                            
+                            {msg.featureKey && !msg.isWelcomeMessage && (
+                              <div style={{
+                                marginTop: '12px',
+                                padding: '8px 12px',
+                                backgroundColor: colors.bgPrimary,
+                                borderRadius: '8px',
+                                display: 'inline-block',
+                                fontSize: '12px',
+                                fontFamily: 'Alata, sans-serif',
+                                color: colors.textSecondary
+                              }}>
+                                {FEATURE_CONFIG[msg.featureKey]?.icon} {FEATURE_CONFIG[msg.featureKey]?.name}
                               </div>
                             )}
 
@@ -2057,6 +2124,7 @@ Generated on: ${new Date().toLocaleString()}
                         </div>
                       </div>
                     )}
+                    </div>
                   </div>
                 ))}
               </>
