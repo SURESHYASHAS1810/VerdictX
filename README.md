@@ -358,32 +358,28 @@ One of the most valuable lessons was learning that reliable AI systems depend no
 
 ### Home Page
 
-(Add Screenshot)
+<img width="650" height="195" alt="image" src="https://github.com/user-attachments/assets/23b05b59-0eb8-440c-b157-ff77030130b6" />
 
-### Document Upload Interface
-
-(Add Screenshot)
 
 ### Information Extraction Module
 
-(Add Screenshot)
+![Information Extraction](screenshots/Information%20Extraction.jpg)
+
 
 ### Case Summarization Module
 
-(Add Screenshot)
+![Case Summarisation](screenshots/Case%20Summarisation.jpg)
 
 ### Judgment Prediction Dashboard
 
-(Add Screenshot)
+![Judgement Prediction](screenshots/Judgement%20Prediction.jpg)
 
 ### Bail Analysis Module
 
-(Add Screenshot)
+![Bail Analysis](screenshots/Bail%20analysis.jpg)
 
 ### VerdictX QAI Chatbot
 
-(Add Screenshot)
+![VerdictX QAI](screenshots/VQAI.jpg)(Add Screenshot)
 
-### PDF Export Functionality
 
-(Add Screenshot)
