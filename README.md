@@ -354,32 +354,4 @@ One of the most valuable lessons was learning that reliable AI systems depend no
 
 ---
 
-## Screenshots
-
-### Home Page
-
-<img width="650" height="195" alt="image" src="https://github.com/user-attachments/assets/23b05b59-0eb8-440c-b157-ff77030130b6" />
-
-
-### Information Extraction Module
-
-![Information Extraction](screenshots/Information%20Extraction.jpg)
-
-
-### Case Summarization Module
-
-![Case Summarisation](screenshots/Case%20Summarisation.jpg)
-
-### Judgment Prediction Dashboard
-
-![Judgement Prediction](screenshots/Judgement%20Prediction.jpg)
-
-### Bail Analysis Module
-
-![Bail Analysis](screenshots/Bail%20analysis.jpg)
-
-### VerdictX QAI Chatbot
-
-![VerdictX QAI](screenshots/VQAI.jpg)(Add Screenshot)
-
 
