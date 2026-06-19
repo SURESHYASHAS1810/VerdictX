@@ -354,4 +354,5 @@ One of the most valuable lessons was learning that reliable AI systems depend no
 
 ---
 
+The most surprising lesson was that model quality alone was not enough. Early versions of the system relied heavily on direct LLM responses, but we observed inconsistent legal reasoning and missing context. Introducing Retrieval-Augmented Generation (RAG) with FAISS-based semantic search significantly improved response quality and explainability. This taught me that building reliable AI systems often depends more on retrieval, data quality, and system design than on simply using a larger model.
 
